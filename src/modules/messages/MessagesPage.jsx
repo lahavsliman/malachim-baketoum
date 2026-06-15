@@ -1,0 +1,532 @@
+﻿import { useState, useEffect, useRef } from 'react'
+import { format } from 'date-fns'
+import { he } from 'date-fns/locale'
+import { useAuth } from '../../context/AuthContext'
+import { useRole } from '../../hooks/useRole'
+import { subscribeBranchMessages, sendBranchMessage, getTargetUsers, deleteBranchMessage } from '../../firebase/messages'
+import { createBulkNotifications } from '../../firebase/notifications'
+import { getBranchSettings } from '../../firebase/branches'
+import LoadingSpinner from '../../shared/LoadingSpinner'
+import BranchSelector from '../../shared/BranchSelector'
+import {
+  MegaphoneSimple, Moon, Star, UsersThree, Globe,
+  Car, Ambulance, EnvelopeSimple, GenderMale, GenderFemale, CheckCircle,
+  Trash, X,
+} from '@phosphor-icons/react'
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const TARGET_OPTIONS = [
+  { value: 'all',       label: 'כל המתנדבים',        icon: '📢' },
+  { value: 'night',     label: 'תורני לילה בלבד',    icon: '🌙' },
+  { value: 'shabbat',   label: 'תורני שבת בלבד',     icon: '🕍' },
+  { value: 'vehicle',   label: 'נהגי רכב בלבד',      icon: '🚗' },
+  { value: 'ambulance', label: 'נהגי אמבולנס בלבד',  icon: '🚑' },
+  { value: 'female',    label: 'נשים בלבד',           icon: '♀' },
+  { value: 'male',      label: 'גברים בלבד',          icon: '♂' },
+]
+
+// Emoji strings kept for <option> elements (can't render JSX inside <option>)
+const GROUP_ICONS = {
+  all:       '📢',
+  night:     '🌙',
+  shabbat:   '🕍',
+  vehicle:   '🚗',
+  ambulance: '🚑',
+  custom:    '👥',
+}
+
+// Phosphor component version for use in JSX spans/divs
+function GroupIconComp({ group, size = 20 }) {
+  const cls = 'text-gray-400 shrink-0'
+  if (typeof group === 'string' && group.startsWith('team:')) {
+    return <UsersThree size={size} className={cls} />
+  }
+  switch (group) {
+    case 'all':       return <MegaphoneSimple size={size} className={cls} />
+    case 'night':     return <Moon size={size} className={cls} />
+    case 'shabbat':   return <Star size={size} className={cls} />
+    case 'custom':    return <UsersThree size={size} className={cls} />
+    case 'vehicle':   return <Car size={size} className={cls} />
+    case 'ambulance': return <Ambulance size={size} className={cls} />
+    case 'female':    return <GenderFemale size={size} className={cls} />
+    case 'male':      return <GenderMale size={size} className={cls} />
+    default:          return <MegaphoneSimple size={size} className={cls} />
+  }
+}
+
+const ROLE_LABELS = {
+  system_admin:   'מנהל מערכת',
+  branch_head:    'ראש סניף',
+  branch_deputy:  'סגן ראש סניף',
+  role_holder:    'בעל תפקיד',
+  volunteer:      'מתנדב',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const hasPerm = (user, key) =>
+  user?.permissions?.[key] === true || user?.[key] === true
+
+function formatTs(ts) {
+  if (!ts) return ''
+  try {
+    const d = ts?.toDate ? ts.toDate() : new Date(ts)
+    return format(d, "dd/MM/yyyy HH:mm", { locale: he })
+  } catch { return '' }
+}
+
+// ── Send form (inline) ────────────────────────────────────────────────────────
+
+function SendMessageForm({ user, branchId, onSent, onCancel }) {
+  const [title,       setTitle]       = useState('')
+  const [body,        setBody]        = useState('')
+  const [targetGroup, setTargetGroup] = useState('all')
+  const [sending,     setSending]     = useState(false)
+  const [error,       setError]       = useState('')
+  const [teams,       setTeams]       = useState([])
+
+  useEffect(() => {
+    if (!branchId) return
+    getBranchSettings(branchId)
+      .then(s => setTeams(s?.teams?.filter(Boolean) ?? []))
+      .catch(() => {})
+  }, [branchId])
+
+  const handleSend = async (e) => {
+    e.preventDefault()
+    if (!title.trim() || !body.trim()) {
+      setError('נא למלא כותרת ותוכן הודעה')
+      return
+    }
+    setSending(true)
+    setError('')
+    try {
+      const senderName = `${user.firstName} ${user.lastName}`
+
+      // 1. Resolve target users
+      const targets    = await getTargetUsers(branchId, targetGroup)
+      const targetIds  = targets.map(u => u.id)
+
+      // 2. Save message — capture the new doc ID to link notifications
+      const msgRef = await sendBranchMessage(branchId, user.id, senderName, title.trim(), body.trim(), targetGroup, targetIds)
+
+      // 3. Fan-out notifications (carry messageId so delete can clean them up)
+      await createBulkNotifications(targetIds, branchId, title.trim(), body.trim(), 'general', { messageId: msgRef.id })
+
+      onSent(targets.length)
+    } catch (err) {
+      console.error(err)
+      setError('שגיאה בשליחה, נסה שנית')
+      setSending(false)
+    }
+  }
+
+  const allTargetOptions = [
+    ...TARGET_OPTIONS,
+    ...teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, icon: '👥' })),
+  ]
+  const selectedOption = allTargetOptions.find(o => o.value === targetGroup)
+
+  return (
+    <form
+      onSubmit={handleSend}
+      className="bg-white border border-orange-500/30 rounded-2xl p-5 space-y-4"
+    >
+      <h3 className="font-bold text-gray-800 flex items-center gap-2">
+        <MegaphoneSimple size={18} className="text-orange-400" /> הודעה חדשה
+      </h3>
+
+      {/* Title */}
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">כותרת *</label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="כותרת ההודעה"
+          maxLength={120}
+          className="w-full bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900
+                     placeholder-gray-400 focus:outline-none focus:border-orange-500 transition"
+        />
+      </div>
+
+      {/* Body */}
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">תוכן ההודעה *</label>
+        <textarea
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          placeholder="כתוב את ההודעה כאן..."
+          rows={4}
+          className="w-full bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900
+                     placeholder-gray-400 focus:outline-none focus:border-orange-500 transition resize-none"
+        />
+      </div>
+
+      {/* Target group */}
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">קהל יעד</label>
+        <div className="relative">
+          <select
+            value={targetGroup}
+            onChange={e => setTargetGroup(e.target.value)}
+            className="w-full bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900
+                       focus:outline-none focus:border-orange-500 transition appearance-none"
+          >
+            {allTargetOptions.map(o => (
+              <option key={o.value} value={o.value}>{o.icon} {o.label}</option>
+            ))}
+          </select>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">▾</span>
+        </div>
+        <p className="text-xs text-gray-500 mt-1.5">
+          {selectedOption?.icon} ההודעה תישלח ל{selectedOption?.label}
+        </p>
+      </div>
+
+      {error && (
+        <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
+          {error}
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl transition border border-gray-200"
+        >
+          ביטול
+        </button>
+        <button
+          type="submit"
+          disabled={sending}
+          className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-2"
+        >
+          {sending
+            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> שולח...</>
+            : <><MegaphoneSimple size={16} className="inline ml-1" /> שלח הודעה</>}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Message card ──────────────────────────────────────────────────────────────
+
+function MessageCard({ msg, onOpen, canDelete, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const preview = msg.body?.length > 120 ? msg.body.slice(0, 120) + '…' : msg.body
+
+  return (
+    <div
+      className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-gray-300 hover:shadow-sm transition cursor-pointer"
+      onClick={() => onOpen(msg)}
+    >
+      <div className="flex items-start gap-3">
+        {/* Group icon */}
+        <span className="shrink-0 mt-0.5 flex items-center">
+          <GroupIconComp group={msg.targetGroup} />
+        </span>
+
+        <div className="flex-1 min-w-0">
+          {/* Title + time + delete */}
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-bold text-gray-900 leading-snug">{msg.title}</h3>
+            <div className="flex items-center gap-2 shrink-0 mt-0.5">
+              <span className="text-xs text-gray-500">{formatTs(msg.createdAt)}</span>
+              {canDelete && (
+                <button
+                  onClick={e => { e.stopPropagation(); setConfirmDelete(true) }}
+                  className="text-gray-300 hover:text-red-500 transition"
+                  title="מחק הודעה"
+                >
+                  <Trash size={15} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Sender */}
+          <p className="text-xs text-gray-500 mt-0.5">
+            {msg.senderName}
+            {msg.senderRole && (
+              <span className="mr-1 text-gray-600">
+                · {ROLE_LABELS[msg.senderRole] ?? msg.senderRole}
+              </span>
+            )}
+          </p>
+
+          {/* Body preview */}
+          <p className="text-sm text-gray-700 mt-2 leading-relaxed">{preview}</p>
+
+          {/* Target badge */}
+          <div className="mt-3">
+            <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200">
+              <GroupIconComp group={msg.targetGroup} size={12} />
+              {TARGET_OPTIONS.find(o => o.value === msg.targetGroup)?.label
+                ?? (msg.targetGroup?.startsWith('team:')
+                    ? `צוות ${msg.targetGroup.slice(5)}`
+                    : 'כל המתנדבים')}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div
+          className="mt-4 pt-4 border-t border-red-100 bg-red-50 rounded-xl px-4 py-3 space-y-3"
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="text-sm text-red-700 font-medium">
+            האם למחוק את ההודעה? היא תימחק גם מההתראות
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="flex-1 bg-white border border-gray-200 text-gray-700 text-sm font-medium py-1.5 rounded-xl transition hover:bg-gray-50"
+            >
+              ביטול
+            </button>
+            <button
+              onClick={() => { setConfirmDelete(false); onDelete(msg.id) }}
+              className="flex-1 bg-red-500 hover:bg-red-400 text-white text-sm font-bold py-1.5 rounded-xl transition"
+            >
+              מחק
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Message modal ─────────────────────────────────────────────────────────────
+
+function MessageModal({ msg, onClose }) {
+  const tgLabel = TARGET_OPTIONS.find(o => o.value === msg.targetGroup)?.label
+    ?? (msg.targetGroup?.startsWith('team:')
+        ? `צוות ${msg.targetGroup.slice(5)}`
+        : 'כל המתנדבים')
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <h2 className="text-lg font-bold text-gray-900 leading-snug flex-1">{msg.title}</h2>
+          <button
+            onClick={onClose}
+            className="shrink-0 text-gray-400 hover:text-gray-600 transition p-0.5"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-5">{msg.body}</p>
+
+        {/* Meta */}
+        <div className="space-y-2 border-t border-gray-100 pt-4">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-gray-500 w-16 shrink-0">שולח:</span>
+            <span className="text-gray-800">
+              {msg.senderName}
+              {msg.senderRole && (
+                <span className="text-gray-400 mr-1">
+                  · {ROLE_LABELS[msg.senderRole] ?? msg.senderRole}
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-gray-500 w-16 shrink-0">קהל יעד:</span>
+            <span className="inline-flex items-center gap-1 text-gray-800">
+              <GroupIconComp group={msg.targetGroup} size={14} />
+              {tgLabel}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-gray-500 w-16 shrink-0">נשלח:</span>
+            <span className="text-gray-800">{formatTs(msg.createdAt)}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-5 w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2.5 rounded-xl transition"
+        >
+          סגור
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function MessagesPage() {
+  const { user } = useAuth()
+  const { isBranchHead, isSystemAdmin, isRoleHolder } = useRole()
+
+  const canSend   = isBranchHead || isSystemAdmin || isRoleHolder
+  const canDelete = isBranchHead || isSystemAdmin || user?.role === 'branch_deputy'
+
+  // For system_admin: branch selected from dropdown. Others: their own branch.
+  const [adminBranchId, setAdminBranchId] = useState(null)
+  const branchId = isSystemAdmin ? adminBranchId : user?.branchId
+
+  const [messages,    setMessages]    = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [showForm,    setShowForm]    = useState(false)
+  const [successMsg,  setSuccessMsg]  = useState('')
+  const [selectedMsg, setSelectedMsg] = useState(null)
+
+  // Real-time subscription
+  useEffect(() => {
+    if (!branchId) { setMessages([]); setLoading(false); return }
+    setLoading(true)
+    const unsub = subscribeBranchMessages(branchId, (msgs) => {
+      setMessages(msgs)
+      setLoading(false)
+    })
+    return unsub
+  }, [branchId])
+
+  // Permission-based message filter for regular volunteers
+  const userMatchesMessage = (msg) => {
+    if (canSend) return true  // managers/coordinators see all messages
+    const tg = msg.targetGroup
+    if (!tg || tg === 'all')   return true
+    if (tg === 'custom')       return msg.targetUserIds?.includes(user?.id) ?? false
+    if (tg === 'night')        return hasPerm(user, 'nightShifts')
+    if (tg === 'shabbat')      return hasPerm(user, 'shabbatVolunteer')
+    if (tg === 'vehicle')      return hasPerm(user, 'vehicleDriver')
+    if (tg === 'ambulance')    return hasPerm(user, 'ambulanceDriver')
+    if (tg === 'female')       return user?.gender === 'female'
+    if (tg === 'male')         return user?.gender === 'male'
+    if (tg.startsWith('team:')) return (user?.team || '').trim() === tg.slice(5).trim()
+    return true
+  }
+
+  const handleSent = (recipientCount) => {
+    setShowForm(false)
+    setSuccessMsg(`ההודעה נשלחה בהצלחה ל-${recipientCount} מתנדבים`)
+    setTimeout(() => setSuccessMsg(''), 5000)
+  }
+
+  const handleDelete = async (msgId) => {
+    try {
+      await deleteBranchMessage(msgId)
+      // Real-time subscription auto-removes it from the list
+    } catch (err) {
+      console.error('[MessagesPage] delete failed:', err)
+    }
+  }
+
+  return (
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto pb-20 lg:pb-6">
+
+      {/* Page header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+          <MegaphoneSimple size={24} className="text-orange-400" /> הודעות סניף
+        </h1>
+        {canSend && !showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            disabled={!branchId}
+            className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white font-medium px-4 py-2 rounded-xl text-sm transition"
+          >
+            <span className="text-base leading-none">+</span>
+            הודעה חדשה
+          </button>
+        )}
+      </div>
+
+      {/* Branch selector — system_admin only */}
+      <BranchSelector value={adminBranchId} onChange={setAdminBranchId} />
+
+      {isSystemAdmin && !branchId && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
+          <Globe size={40} className="text-gray-300 mb-3 mx-auto" />
+          <p className="text-gray-700 font-medium">בחר סניף כדי לצפות בהודעות</p>
+        </div>
+      )}
+
+      {/* Success banner */}
+      {successMsg && (
+        <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl px-5 py-3 text-gray-900 font-medium text-sm flex items-center gap-2">
+          <CheckCircle size={18} className="text-green-500 shrink-0" />
+          {successMsg}
+        </div>
+      )}
+
+      {/* Send form */}
+      {showForm && (
+        <div className="mb-6">
+          <SendMessageForm
+            user={user}
+            branchId={branchId}
+            onSent={handleSent}
+            onCancel={() => setShowForm(false)}
+          />
+        </div>
+      )}
+
+      {/* Message list */}
+      {loading ? (
+        <div className="py-16 flex justify-center">
+          <LoadingSpinner size="lg" text="טוען הודעות..." />
+        </div>
+      ) : messages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+          <EnvelopeSimple size={56} className="text-gray-300" />
+          <div>
+            <p className="text-lg font-semibold text-gray-700">אין הודעות עדיין</p>
+            {canSend && (
+              <p className="text-sm text-gray-500 mt-1">
+                שלח הודעה ראשונה לסניף ←
+              </p>
+            )}
+          </div>
+          {canSend && !showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-orange-500 hover:bg-orange-400 text-white font-bold px-5 py-2.5 rounded-xl transition"
+            >
+              <MegaphoneSimple size={16} className="inline ml-1" /> שלח הודעה ראשונה
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {messages.filter(userMatchesMessage).map(msg => (
+            <MessageCard
+              key={msg.id}
+              msg={msg}
+              onOpen={setSelectedMsg}
+              canDelete={canDelete}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Message detail modal */}
+      {selectedMsg && (
+        <MessageModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} />
+      )}
+
+    </div>
+  )
+}

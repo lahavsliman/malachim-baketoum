@@ -1,0 +1,288 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSystemAdmin() {
+      return isAuth() && getUserData().role == 'system_admin';
+    }
+
+    function isBranchHead(branchId) {
+      let u = getUserData();
+      return isAuth() && (u.role == 'branch_head' || u.role == 'branch_deputy') && u.branchId == branchId;
+    }
+
+    function isRoleHolder(branchId, roleType) {
+      let u = getUserData();
+      // Support both legacy roleType (string) and new roleTypes (array).
+      // NOTE: `in` checks map keys — use .hasAny() for arrays.
+      // Also accept legacy users stored as role='volunteer' but with roleTypes populated
+      // (un-migrated Firestore data — treated identically to role_holder in useRole.js).
+      // The second condition still requires a matching roleType, so plain volunteers are
+      // unaffected (they have no roleType/roleTypes and will fail that check).
+      return isAuth() && u.branchId == branchId
+        && (u.role == 'role_holder' || u.role == 'branch_head' || u.role == 'branch_deputy'
+            || u.role == 'volunteer')
+        && (u.roleType == roleType || (u.roleTypes != null && u.roleTypes.hasAny([roleType])));
+    }
+
+    function isBranchMember(branchId) {
+      return isAuth() && getUserData().branchId == branchId;
+    }
+
+    function canWriteMessages(branchId) {
+      let u = getUserData();
+      return isAuth() && u.branchId == branchId
+        && (u.role == 'system_admin' || u.role == 'branch_head'
+            || u.role == 'branch_deputy' || u.role == 'role_holder');
+    }
+
+    // True for branch_head, branch_deputy, or a role_holder with events_coordinator role type.
+    // Also accepts the legacy format: role='volunteer' with roleTypes containing 'events_coordinator'
+    // (un-migrated Firestore data — treated identically to role_holder in useRole.js).
+    function canManageEvents(branchId) {
+      let u = getUserData();
+      return isAuth()
+        && u.branchId == branchId
+        && (
+          u.role == 'branch_head'
+          || u.role == 'branch_deputy'
+          || (
+            (u.role == 'role_holder' || u.role == 'volunteer')
+            && (
+              u.roleType == 'events_coordinator'
+              || (u.roleTypes != null && u.roleTypes.hasAny(['events_coordinator']))
+            )
+          )
+        );
+    }
+
+    // Cities — read-only lookup table, loaded once by scripts/loadCities.js
+    match /cities/{cityId} {
+      allow read: if isAuth();
+      allow write: if isSystemAdmin();
+    }
+
+    // Branches
+    match /branches/{branchId} {
+      allow read: if isAuth();
+      // system_admin: full write (create, delete, any field)
+      allow create, delete: if isSystemAdmin();
+      // branch_head / branch_deputy: may update their own branch (settings, etc.)
+      allow update: if isSystemAdmin() || isBranchHead(branchId);
+    }
+
+    // Users
+    match /users/{userId} {
+      // Single-document reads: own doc (no getUserData() to avoid circular read),
+      // or managers/admins reading any user in their branch.
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow get: if isAuth() && (
+        getUserData().role == 'system_admin'
+        || (getUserData().branchId == resource.data.branchId
+            && (getUserData().role == 'branch_head'
+                || getUserData().role == 'branch_deputy'
+                || getUserData().role == 'role_holder'))
+      );
+      // Collection queries: client already filters by branchId via where();
+      // getUserData() inside a list rule causes Firestore to reject the query
+      // statically, so we only require authentication here.
+      allow list: if isAuth();
+      allow create: if isSystemAdmin()
+        || (isAuth() && (getUserData().role == 'branch_head' || getUserData().role == 'branch_deputy'));
+      allow update: if (request.auth != null && request.auth.uid == userId)
+        || isSystemAdmin()
+        || (isAuth() && getUserData().branchId == resource.data.branchId
+            && (getUserData().role == 'branch_head' || getUserData().role == 'branch_deputy'));
+      allow delete: if isSystemAdmin()
+        || (isAuth()
+            && resource.data.branchId == getUserData().branchId
+            && (getUserData().role == 'branch_head' || getUserData().role == 'branch_deputy'));
+    }
+
+    // Night shifts
+    match /night_shifts/{shiftId} {
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || getUserData().branchId == resource.data.branchId
+      );
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || isRoleHolder(request.resource.data.branchId, 'night_coordinator')
+        || (
+          // Accept both legacy flat field and new permissions.nightShifts object
+          (getUserData().nightShifts == true
+            || (getUserData().permissions != null && getUserData().permissions.nightShifts == true))
+          && getUserData().branchId == request.resource.data.branchId
+          && request.resource.data.volunteerId == request.auth.uid
+        )
+      );
+      allow update, delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'night_coordinator')
+        || (resource.data.volunteerId == request.auth.uid)
+      );
+    }
+
+    // Shabbat shifts
+    match /shabbat_shifts/{shiftId} {
+      // Reads: branch members + admin
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || getUserData().branchId == resource.data.branchId
+      );
+
+      // Create: admin / branch_head / shabbat_coordinator may create on behalf,
+      // or a shabbat volunteer may submit their OWN availability. We accept
+      // both the legacy flat `shabbatVolunteer` field AND the new
+      // `permissions.shabbatVolunteer` form used by all current imports.
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || isRoleHolder(request.resource.data.branchId, 'shabbat_coordinator')
+        || (
+          request.resource.data.volunteerId == request.auth.uid
+          && getUserData().branchId == request.resource.data.branchId
+          && (
+            getUserData().shabbatVolunteer == true
+            || (getUserData().permissions != null
+                && getUserData().permissions.shabbatVolunteer == true)
+          )
+        )
+      );
+
+      // Update: coordinators may always update; a volunteer may update their
+      // own shift (e.g. when changing their mind), but never after publish.
+      allow update: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'shabbat_coordinator')
+        || (
+          resource.data.volunteerId == request.auth.uid
+          && resource.data.published != true
+        )
+      );
+
+      // Delete: coordinators may always delete; a volunteer may retract their
+      // own pending shift, but never after publish.
+      allow delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'shabbat_coordinator')
+        || (
+          resource.data.volunteerId == request.auth.uid
+          && resource.data.published != true
+        )
+      );
+    }
+
+    // Building codes — NO volunteer access
+    match /building_codes/{codeId} {
+      // Read (get + list): resource.data is available for existing documents
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'dispatcher')
+      );
+      // Create: use request.resource.data — resource.data is null for new documents
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || isRoleHolder(request.resource.data.branchId, 'dispatcher')
+      );
+      // Update / delete: document already exists, resource.data is available
+      allow update, delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'dispatcher')
+      );
+    }
+
+    // Lottery results
+    match /lottery_results/{resultId} {
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || getUserData().branchId == resource.data.branchId
+      );
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || isRoleHolder(request.resource.data.branchId, 'night_coordinator')
+      );
+    }
+
+    // Notifications — each user reads/writes only their own
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow create: if isAuth();   // server/functions create; clients create own
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // Events — all branch members read; branch_head/deputy/events_coordinator write
+    match /events/{eventId} {
+      // Single-document reads: verify the user belongs to the same branch
+      allow get: if isAuth() && (
+        isSystemAdmin()
+        || getUserData().branchId == resource.data.branchId
+      );
+      // Collection queries: client already filters by branchId via where();
+      // getUserData() inside a list rule causes Firestore to reject the query
+      // statically, so we only require authentication here.
+      allow list: if isAuth();
+      allow create: if isSystemAdmin()
+        || canManageEvents(request.resource.data.branchId);
+      allow update, delete: if isSystemAdmin()
+        || canManageEvents(resource.data.branchId);
+    }
+
+    // Event responses — branch members read; each volunteer writes their own response
+    match /event_responses/{responseId} {
+      allow get: if isAuth() && (
+        isSystemAdmin()
+        || getUserData().branchId == resource.data.branchId
+      );
+      allow list: if isAuth();
+      allow create, update: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || (getUserData().branchId == request.resource.data.branchId
+            && request.resource.data.volunteerId == request.auth.uid)
+      );
+      allow delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+      );
+    }
+
+    // Branch messages — branch members read, role holders+ write
+    match /branch_messages/{messageId} {
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || isBranchMember(resource.data.branchId)
+      );
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || canWriteMessages(request.resource.data.branchId)
+      );
+      allow update, delete: if isAuth() && (
+        isSystemAdmin()
+        || (request.auth.uid == resource.data.senderId
+            && isBranchMember(resource.data.branchId))
+      );
+    }
+  }
+}
