@@ -66,8 +66,30 @@ export const searchCodes = async (branchId, streetQuery) => {
     .sort((a, b) => (a.street || '').localeCompare(b.street || '', 'he'))
 }
 
+// Check whether an address already exists in a branch
+export const findCodeByAddress = async (branchId, { city, street, buildingNumber, entrance }) => {
+  const q = query(
+    collection(db, 'building_codes'),
+    where('branchId', '==', branchId)
+  )
+  const snap = await getDocs(q)
+  const norm = (v) => String(v ?? '').trim().toLowerCase()
+  const match = snap.docs.find(d => {
+    const c = d.data()
+    return norm(c.city) === norm(city) &&
+           norm(c.street) === norm(street) &&
+           norm(c.buildingNumber) === norm(buildingNumber) &&
+           norm(c.entrance) === norm(entrance)
+  })
+  return match ? { id: match.id, ...match.data() } : null
+}
+
 // Add with audit trail
 export const addCode = async (branchId, codeData, userId, userName) => {
+  const dup = await findCodeByAddress(branchId, codeData)
+  if (dup) {
+    throw new Error('כתובת זו כבר קיימת במערכת')
+  }
   console.log('[addCode] writing to building_codes, branchId:', branchId, 'data:', codeData)
   return addDoc(collection(db, 'building_codes'), {
     ...codeData,

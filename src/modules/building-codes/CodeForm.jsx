@@ -37,8 +37,8 @@ export default function CodeForm({ branchId, userId, userName, editCode, allowed
         await addCode(branchId, form, userId, userName)
       }
       onSaved()
-    } catch {
-      setError('שגיאה בשמירה, נסה שנית')
+    } catch (err) {
+      setError(err?.message || 'שגיאה בשמירה, נסה שנית')
     } finally {
       setLoading(false)
     }
@@ -117,7 +117,7 @@ export default function CodeForm({ branchId, userId, userName, editCode, allowed
         </div>
 
         {error && (
-          <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-3">{error}</p>
+          <p className="text-red-800 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{error}</p>
         )}
 
         <div className="flex gap-3">
