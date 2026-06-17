@@ -208,6 +208,32 @@ service cloud.firestore {
       );
     }
 
+    // Transport shifts — coordinators record driver shifts; drivers read their own
+    match /transport_shifts/{shiftId} {
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'transport_coordinator')
+        || isRoleHolder(resource.data.branchId, 'car_coordinator')
+        || isRoleHolder(resource.data.branchId, 'ambulance_coordinator')
+        || resource.data.volunteerId == request.auth.uid
+      );
+      allow create: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(request.resource.data.branchId)
+        || isRoleHolder(request.resource.data.branchId, 'transport_coordinator')
+        || isRoleHolder(request.resource.data.branchId, 'car_coordinator')
+        || isRoleHolder(request.resource.data.branchId, 'ambulance_coordinator')
+      );
+      allow update, delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+        || isRoleHolder(resource.data.branchId, 'transport_coordinator')
+        || isRoleHolder(resource.data.branchId, 'car_coordinator')
+        || isRoleHolder(resource.data.branchId, 'ambulance_coordinator')
+      );
+    }
+
     // Lottery results
     match /lottery_results/{resultId} {
       allow read: if isAuth() && (

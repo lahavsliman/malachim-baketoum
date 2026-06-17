@@ -23,7 +23,9 @@ const ROLE_TYPES = [
   { value: 'shabbat_coordinator', label: 'רכז שבת' },
   { value: 'dispatcher',         label: 'מוקדן' },
   { value: 'events_coordinator', label: 'רכז אירועים' },
+  { value: 'transport_coordinator', label: 'רכז תחבורה' },
   { value: 'car_coordinator',    label: 'רכז רכב' },
+  { value: 'ambulance_coordinator', label: 'רכז אמבולנס' },
   { value: 'cohesion_coordinator', label: 'רכז גיבוש' },
 ]
 
@@ -128,7 +130,9 @@ const ROLE_SLOTS = [
   { roleType: 'night_coordinator',   label: 'רכז לילה' },
   { roleType: 'shabbat_coordinator', label: 'רכז שבת' },
   { roleType: 'dispatcher',          label: 'מוקדן', multi: true },
+  { roleType: 'transport_coordinator', label: 'רכז תחבורה' },
   { roleType: 'car_coordinator',     label: 'רכז רכב' },
+  { roleType: 'ambulance_coordinator', label: 'רכז אמבולנס' },
   { roleType: 'events_coordinator',  label: 'רכז גיבוש' },
 ]
 

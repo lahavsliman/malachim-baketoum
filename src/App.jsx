@@ -17,6 +17,8 @@ import BuildingCodesPage from './modules/building-codes/BuildingCodesPage'
 import MessagesPage from './modules/messages/MessagesPage'
 import NotificationsPage from './modules/notifications/NotificationsPage'
 import EventsPage from './modules/events/EventsPage'
+import TransportPage from './pages/TransportPage'
+import MyTransportPage from './pages/MyTransportPage'
 import ReportsPage from './modules/reports/ReportsPage'
 import InstallPrompt from './shared/InstallPrompt'
 
@@ -88,6 +90,8 @@ function AppLayout() {
             <Route path="/night-shifts" element={<NightShiftsPage />} />
             <Route path="/shabbat" element={<ShabbatPage />} />
             <Route path="/events" element={<EventsPage />} />
+            <Route path="/transport" element={<TransportPage />} />
+            <Route path="/my-transport" element={<MyTransportPage />} />
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route

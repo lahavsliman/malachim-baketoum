@@ -24,6 +24,9 @@ export const useRole = () => {
   const isDispatcher         = isRoleHolder && roleTypes.includes('dispatcher')
   const isShabbatCoordinator = isRoleHolder && roleTypes.includes('shabbat_coordinator')
   const isEventsCoordinator  = isRoleHolder && roleTypes.includes('events_coordinator')
+  const isTransportCoordinator = isRoleHolder && roleTypes.includes('transport_coordinator')
+  const isCarCoordinator       = isRoleHolder && roleTypes.includes('car_coordinator')
+  const isAmbulanceCoordinator = isRoleHolder && roleTypes.includes('ambulance_coordinator')
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[useRole]', {
@@ -42,13 +45,25 @@ export const useRole = () => {
   const canManageBranch       = isSystemAdmin || isBranchHead
   const canManageEvents       = isSystemAdmin || isBranchHead || isEventsCoordinator
 
+  const canManageTransport = isSystemAdmin || isBranchHead || isTransportCoordinator || isCarCoordinator || isAmbulanceCoordinator
+  // Which transport types this user may see:
+  //  - transport_coordinator / branch_head / admin → both
+  //  - car_coordinator → car only
+  //  - ambulance_coordinator → ambulance only
+  const canSeeCarShifts       = isSystemAdmin || isBranchHead || isTransportCoordinator || isCarCoordinator
+  const canSeeAmbulanceShifts = isSystemAdmin || isBranchHead || isTransportCoordinator || isAmbulanceCoordinator
+
   return {
     role, roleTypes, branchId,
     isSystemAdmin, isBranchHead, isRoleHolder, isVolunteer,
     isNightCoordinator, isDispatcher, isShabbatCoordinator, isEventsCoordinator,
+    isTransportCoordinator, isCarCoordinator, isAmbulanceCoordinator,
     canManageNightShifts, canManageShabbat, canAccessBuildingCodes, canManageBranch, canManageEvents,
+    canManageTransport, canSeeCarShifts, canSeeAmbulanceShifts,
     hasNightShifts: user?.permissions?.nightShifts === true || user?.nightShifts === true,
     hasShabbat: user?.permissions?.shabbatVolunteer === true || user?.shabbatVolunteer === true,
+    isVehicleDriver: user?.permissions?.vehicleDriver === true || user?.vehicleDriver === true,
+    isAmbulanceDriver: user?.permissions?.ambulanceDriver === true || user?.ambulanceDriver === true,
     shabbatArea: user?.shabbatArea,
   }
 }

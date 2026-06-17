@@ -2,7 +2,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   House, Moon, Star, Buildings, UsersThree,
-  ChatCircle, ChartBar, Sliders, Globe, SignOut, HandWaving,
+  ChatCircle, ChartBar, Sliders, Globe, SignOut, HandWaving, Car,
 } from '@phosphor-icons/react'
 import { useRole } from '../hooks/useRole'
 import { useAuth } from '../context/AuthContext'
@@ -79,7 +79,8 @@ export default function Sidebar({ isOpen, onClose }) {
   const navigate = useNavigate()
   const {
     isSystemAdmin, isBranchHead, canManageBranch,
-    canManageNightShifts, canManageShabbat,
+    canManageNightShifts, canManageShabbat, canManageTransport,
+    isVehicleDriver, isAmbulanceDriver,
   } = useRole()
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -100,6 +101,8 @@ export default function Sidebar({ isOpen, onClose }) {
   const showNightShifts  = hasPerm(user, 'nightShifts')  || canManageNightShifts
   const showShabbat      = hasPerm(user, 'shabbatVolunteer') || canManageShabbat
 
+  const isDriver = isVehicleDriver || isAmbulanceDriver
+
   // Building codes: dispatcher (any format) OR branch management roles
   const isDispatcher = hasRoleType(user, 'dispatcher')
   const showBuildingCodes =
@@ -112,6 +115,8 @@ export default function Sidebar({ isOpen, onClose }) {
     { to: '/night-shifts',      Icon: Moon,        label: 'לילה',       show: showNightShifts },
     { to: '/shabbat',           Icon: Star,        label: 'שבת',        show: showShabbat },
     { to: '/building-codes',    Icon: Buildings,   label: 'קודים',      show: showBuildingCodes },
+    { to: '/transport',         Icon: Car,         label: 'תחבורה',     show: canManageTransport },
+    { to: '/my-transport',      Icon: Car,         label: 'התחבורה שלי', show: isDriver },
     { to: '/events',            Icon: UsersThree,  label: 'גיבושים',    always: true },
     { to: '/messages',          Icon: ChatCircle,  label: 'הודעות',     always: true },
     { to: '/reports',           Icon: ChartBar,    label: 'דוחות',      show: canManageBranch },
@@ -184,6 +189,14 @@ export default function Sidebar({ isOpen, onClose }) {
 
             {showBuildingCodes && (
               <NavItem to="/building-codes" Icon={Buildings} label="קודי בניין" onClick={onClose} />
+            )}
+
+            {canManageTransport && (
+              <NavItem to="/transport" Icon={Car} label="ניהול תחבורה" onClick={onClose} />
+            )}
+
+            {isDriver && (
+              <NavItem to="/my-transport" Icon={Car} label="התחבורה שלי" onClick={onClose} />
             )}
 
             <NavItem to="/events" Icon={UsersThree} label="גיבושים" onClick={onClose} />
