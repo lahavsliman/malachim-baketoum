@@ -66,6 +66,22 @@ const txt1    = 'text-gray-900'
 const txt2    = 'text-gray-500'
 const txt3    = 'text-gray-500'
 
+const ROLE_TYPE_LABELS = {
+  night_coordinator:     'רכז לילה',
+  shabbat_coordinator:   'רכז שבת',
+  dispatcher:            'מוקדן',
+  events_coordinator:    'רכז גיבוש',
+  transport_coordinator: 'רכז תחבורה',
+  car_coordinator:       'רכז רכב',
+  ambulance_coordinator: 'רכז אמבולנס',
+  cohesion_coordinator:  'רכז גיבוש',
+}
+
+const getUserRoleBadges = (user) => {
+  const types = user?.roleTypes?.length ? user.roleTypes : (user?.roleType ? [user.roleType] : [])
+  return types.map(t => ROLE_TYPE_LABELS[t]).filter(Boolean)
+}
+
 // ── Generic dashboard (branch_head, system_admin, role_holder) ────────────────
 
 const DASH_ICON_COLORS = { orange: '#F97316', blue: '#3B82F6', purple: '#9333EA', green: '#22C55E' }
@@ -80,9 +96,9 @@ const DashCard = ({ to, Icon, title, subtitle, color = 'orange' }) => {
   return (
     <Link
       to={to}
-      className={`block bg-white border shadow-sm rounded-2xl p-5 transition-all duration-200 ${colors[color]}`}
+      className={`block bg-white border shadow-sm rounded-2xl p-4 transition-all duration-200 ${colors[color]}`}
     >
-      <div className="mb-3"><Icon size={32} color={DASH_ICON_COLORS[color]} /></div>
+      <div className="mb-2"><Icon size={26} color={DASH_ICON_COLORS[color]} /></div>
       <h3 className={`font-bold ${txt1}`}>{title}</h3>
       {subtitle && <p className={`text-sm ${txt2} mt-1`}>{subtitle}</p>}
     </Link>
@@ -108,19 +124,36 @@ function GenericDashboard({ user, branch }) {
   }
   return (
     <div className="bg-[#FAFAFA] min-h-full p-4 sm:p-6 max-w-4xl mx-auto pb-20 lg:pb-0">
-      <div className={`${card} p-5 mb-8`}>
-        <h1 className={`text-2xl sm:text-3xl font-black ${txt1}`}>
-          {greeting()}, {user?.firstName} 👋
-        </h1>
-        {branch && <p className={`${txt2} mt-1`}>סניף {branch.name}</p>}
-        {user?.volunteerId && (
-          <p className={`text-xs ${txt3} mt-1`}>
-            קוד כונן: <span className="font-mono text-gray-500">{user.volunteerId}</span>
-          </p>
-        )}
-        {isSystemAdmin && <p className="text-orange-500 mt-1 font-medium">מנהל מערכת — גישה לכל הסניפים</p>}
+      <div className={`${card} p-5 mb-6`}>
+        <div className="flex items-center gap-4">
+          <img
+            src="/logo_unaited.svg"
+            alt="איחוד הצלה"
+            className="w-14 h-14 object-contain shrink-0 rounded-xl bg-gray-50 p-1 border border-gray-100"
+          />
+          <div className="flex-1 min-w-0">
+            <p className={`${txt2} text-sm mb-1`}>{greeting()} 👋</p>
+            <h1 className={`text-xl sm:text-2xl font-black ${txt1} leading-tight`}>
+              {user?.firstName} {user?.lastName}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              {user?.volunteerId && (
+                <span className={`text-xs ${txt3}`}>
+                  קוד כונן: <span className={`font-mono ${txt2}`}>{user.volunteerId}</span>
+                </span>
+              )}
+              {branch && <span className={`text-xs ${txt2}`}>סניף {branch.name}</span>}
+              {isSystemAdmin && (
+                <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-200">מנהל מערכת</span>
+              )}
+              {getUserRoleBadges(user).map((label, i) => (
+                <span key={i} className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-200">{label}</span>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         {(hasNightShifts || canManageNightShifts) && <DashCard to="/night-shifts" Icon={Moon}       title="שיבוצי לילה" subtitle={canManageNightShifts ? 'ניהול שיבוצי לילה' : 'הרשמה ומעקב'} color="blue" />}
         {(hasShabbat || canManageShabbat) && <DashCard to="/shabbat"           Icon={Star}       title="תורני שבת"   subtitle={canManageShabbat ? 'ניהול תורני שבת' : 'דווח זמינות'} color="purple" />}
         {canAccessBuildingCodes && <DashCard to="/building-codes"              Icon={Buildings}  title="קודי בניין"  subtitle="חיפוש וניהול קודים" color="green" />}
@@ -265,6 +298,13 @@ function VolunteerDashboard({ user, branch }) {
               <p className={`text-xs ${txt3} mt-0.5`}>
                 קוד כונן: <span className="font-mono text-gray-500">{user.volunteerId}</span>
               </p>
+            )}
+            {getUserRoleBadges(user).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {getUserRoleBadges(user).map((label, i) => (
+                  <span key={i} className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-200">{label}</span>
+                ))}
+              </div>
             )}
           </div>
           {hasNight && enableLottery && (
@@ -513,12 +553,13 @@ function BranchHeadDashboard({ user, branch }) {
   const nextFriStr   = format(nextFri, 'yyyy-MM-dd')
   const nextFriLabel = format(nextFri, 'd בMMMM', { locale: he })
 
-  const [loading,        setLoading]        = useState(true)
-  const [nightShifts,    setNightShifts]    = useState([])
-  const [shabbatShifts,  setShabbatShifts]  = useState([])
-  const [branchSettings, setBranchSettings] = useState(null)
-  const [branchUsers,    setBranchUsers]    = useState([])
-  const [codesCount,     setCodesCount]     = useState(0)
+  const [loading,          setLoading]          = useState(true)
+  const [nightShifts,      setNightShifts]      = useState([])
+  const [shabbatShifts,    setShabbatShifts]    = useState([])
+  const [branchSettings,   setBranchSettings]   = useState(null)
+  const [branchUsers,      setBranchUsers]      = useState([])
+  const [codesCount,       setCodesCount]       = useState(0)
+  const [selectedActivity, setSelectedActivity] = useState(null)
 
   useEffect(() => {
     if (!user?.branchId) return
@@ -697,9 +738,8 @@ function BranchHeadDashboard({ user, branch }) {
 
           {notSignedUp.length > 0 ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2">
                 <p className="text-sm font-medium text-yellow-800">לא נרשמו עדיין — {notSignedUp.length} מתנדבים</p>
-                <Link to="/night-shifts" className="text-xs text-orange-500 hover:text-orange-600">לצפייה ←</Link>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {notSignedUp.slice(0, 8).map(v => (
@@ -711,6 +751,10 @@ function BranchHeadDashboard({ user, branch }) {
                   <span className={`text-xs ${txt3} self-center`}>+{notSignedUp.length - 8} נוספים</span>
                 )}
               </div>
+              <Link to="/night-shifts"
+                className="block w-full text-center mt-3 bg-white border border-orange-200 text-orange-600 hover:bg-orange-50 text-sm font-medium py-2 rounded-xl transition">
+                לצפייה בכל המתנדבים ←
+              </Link>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
@@ -758,7 +802,7 @@ function BranchHeadDashboard({ user, branch }) {
         ) : (
           <div className="divide-y divide-gray-50">
             {recentActivity.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 px-5 py-3">
+              <div key={i} onClick={() => setSelectedActivity(a)} className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-gray-50 transition">
                 {a.kind === 'night' ? <Moon size={18} color="#3B82F6" className="shrink-0" /> : <Star size={18} color="#9333EA" className="shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm ${txt1} truncate`}>
@@ -853,6 +897,44 @@ function BranchHeadDashboard({ user, branch }) {
           ))}
         </div>
       </div>
+
+      {selectedActivity && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={e => e.target === e.currentTarget && setSelectedActivity(null)}>
+          <div className={`${card} p-6 max-w-sm w-full`} dir="rtl">
+            <div className="flex items-center gap-3 mb-4">
+              {selectedActivity.kind === 'night'
+                ? <Moon size={24} color="#3B82F6" className="shrink-0" />
+                : <Star size={24} color="#9333EA" className="shrink-0" />}
+              <h2 className={`text-lg font-bold ${txt1}`}>פרטי פעילות</h2>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className={txt2}>מתנדב</span>
+                <span className={`font-medium ${txt1}`}>{selectedActivity.name}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className={txt2}>פעולה</span>
+                <span className={`font-medium ${txt1}`}>
+                  {selectedActivity.kind === 'night' ? 'נרשם לתורנות לילה' : 'דיווח זמינות לשבת'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className={txt2}>תאריך</span>
+                <span className={`font-medium ${txt1}`}>{toIsraeliDate(selectedActivity.date)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className={txt2}>זמן</span>
+                <span className={`font-medium ${txt1}`}>{selectedActivity.ts ? format(selectedActivity.ts, 'dd/MM/yyyy HH:mm') : '—'}</span>
+              </div>
+            </div>
+            <button onClick={() => setSelectedActivity(null)}
+              className="w-full mt-5 bg-gray-100 hover:bg-gray-200 text-gray-800 py-2.5 rounded-xl font-medium transition">
+              סגור
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   )
