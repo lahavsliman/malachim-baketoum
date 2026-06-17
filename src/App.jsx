@@ -19,6 +19,7 @@ import NotificationsPage from './modules/notifications/NotificationsPage'
 import EventsPage from './modules/events/EventsPage'
 import TransportPage from './pages/TransportPage'
 import MyTransportPage from './pages/MyTransportPage'
+import ContactsPage from './pages/ContactsPage'
 import ReportsPage from './modules/reports/ReportsPage'
 import InstallPrompt from './shared/InstallPrompt'
 
@@ -92,6 +93,7 @@ function AppLayout() {
             <Route path="/events" element={<EventsPage />} />
             <Route path="/transport" element={<TransportPage />} />
             <Route path="/my-transport" element={<MyTransportPage />} />
+            <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route

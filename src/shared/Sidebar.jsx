@@ -2,7 +2,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   House, Moon, Star, Buildings, UsersThree,
-  ChatCircle, ChartBar, Sliders, Globe, SignOut, HandWaving, Car,
+  ChatCircle, ChartBar, Sliders, Globe, SignOut, HandWaving, Car, IdentificationCard,
 } from '@phosphor-icons/react'
 import { useRole } from '../hooks/useRole'
 import { useAuth } from '../context/AuthContext'
@@ -117,8 +117,9 @@ export default function Sidebar({ isOpen, onClose }) {
     { to: '/building-codes',    Icon: Buildings,   label: 'קודים',      show: showBuildingCodes },
     { to: '/transport',         Icon: Car,         label: 'תחבורה',     show: canManageTransport },
     { to: '/my-transport',      Icon: Car,         label: 'התחבורה שלי', show: isDriver },
-    { to: '/events',            Icon: UsersThree,  label: 'גיבושים',    always: true },
-    { to: '/messages',          Icon: ChatCircle,  label: 'הודעות',     always: true },
+    { to: '/events',            Icon: UsersThree,        label: 'גיבושים',    always: true },
+    { to: '/contacts',         Icon: IdentificationCard, label: 'אנשי קשר',   always: true },
+    { to: '/messages',          Icon: ChatCircle,        label: 'הודעות',     always: true },
     { to: '/reports',           Icon: ChartBar,    label: 'דוחות',      show: canManageBranch },
     { to: '/branch-management', Icon: Sliders,     label: 'ניהול סניף', show: isBranchHead },
     { to: '/system-admin',      Icon: Globe,       label: 'כל הסניפים', show: isSystemAdmin },
@@ -200,6 +201,8 @@ export default function Sidebar({ isOpen, onClose }) {
             )}
 
             <NavItem to="/events" Icon={UsersThree} label="גיבושים" onClick={onClose} />
+
+            <NavItem to="/contacts" Icon={IdentificationCard} label="אנשי קשר" onClick={onClose} />
 
             {/* Messages — always visible */}
             <NavItem to="/messages" Icon={ChatCircle} label="הודעות" onClick={onClose} />

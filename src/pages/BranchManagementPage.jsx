@@ -569,6 +569,18 @@ export default function BranchManagementPage() {
     }
   }
 
+  const handleToggleRoleVisibility = async (slot, vol) => {
+    const current = vol.roleVisibility || {}
+    const currentlyVisible = current[slot.roleType] !== false
+    const newVisibility = { ...current, [slot.roleType]: !currentlyVisible }
+    try {
+      await updateUser(vol.id, { roleVisibility: newVisibility })
+      loadVolunteers()
+    } catch {
+      showToast('error', 'שגיאה בעדכון תצוגה')
+    }
+  }
+
   // ── Building codes import handlers ───────────────────────────────────────
   const handleCodesFile = e => {
     const file = e.target.files?.[0]
@@ -1043,13 +1055,26 @@ export default function BranchManagementPage() {
                         {holders.map(h => (
                           <div key={h.id} className="flex items-center justify-between bg-gray-100 rounded-xl px-3 py-2">
                             <span className="text-orange-400 text-sm">{h.firstName} {h.lastName}</span>
-                            <button
-                              onClick={() => handleRemoveRole(slot, h)}
-                              disabled={rolesSaving}
-                              className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 transition"
-                            >
-                              הסר
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleToggleRoleVisibility(slot, h)}
+                                className={`text-xs px-2 py-0.5 rounded-lg transition border ${
+                                  (h.roleVisibility?.[slot.roleType] !== false)
+                                    ? 'border-green-300 text-green-700 hover:bg-green-50'
+                                    : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+                                }`}
+                                title="הצגה בעמוד אנשי הקשר של המתנדבים"
+                              >
+                                {(h.roleVisibility?.[slot.roleType] !== false) ? 'מוצג' : 'מוסתר'}
+                              </button>
+                              <button
+                                onClick={() => handleRemoveRole(slot, h)}
+                                disabled={rolesSaving}
+                                className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 transition"
+                              >
+                                הסר
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1093,13 +1118,28 @@ export default function BranchManagementPage() {
                       }
                     </div>
                     {holder ? (
-                      <button
-                        onClick={() => handleRemoveRole(slot, holder)}
-                        disabled={rolesSaving}
-                        className="text-sm text-red-400 hover:text-red-300 disabled:opacity-40 transition border border-red-500/30 hover:border-red-400/50 px-3 py-1.5 rounded-xl"
-                      >
-                        הסר מתפקיד
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {!slot.isDeputy && (
+                          <button
+                            onClick={() => handleToggleRoleVisibility(slot, holder)}
+                            className={`text-xs px-2 py-0.5 rounded-lg transition border ${
+                              (holder.roleVisibility?.[slot.roleType] !== false)
+                                ? 'border-green-300 text-green-700 hover:bg-green-50'
+                                : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+                            }`}
+                            title="הצגה בעמוד אנשי הקשר של המתנדבים"
+                          >
+                            {(holder.roleVisibility?.[slot.roleType] !== false) ? 'מוצג' : 'מוסתר'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRemoveRole(slot, holder)}
+                          disabled={rolesSaving}
+                          className="text-sm text-red-400 hover:text-red-300 disabled:opacity-40 transition border border-red-500/30 hover:border-red-400/50 px-3 py-1.5 rounded-xl"
+                        >
+                          הסר מתפקיד
+                        </button>
+                      </div>
                     ) : (
                       <div className="flex gap-2 items-center">
                         <select
