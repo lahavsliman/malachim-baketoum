@@ -60,7 +60,7 @@ function AppLayout() {
 
   // Silently register token if permission already granted
   useEffect(() => {
-    if (user?.id && Notification.permission === 'granted') {
+    if (user?.id && 'Notification' in window && Notification.permission === 'granted') {
       registerFcmToken(user.id)
     }
   }, [user?.id])
@@ -68,6 +68,7 @@ function AppLayout() {
   const handleApprove = async () => {
     setShowBanner(false)
     sessionStorage.setItem('notifPromptShown', '1')
+    if (!('Notification' in window)) return
     const permission = await Notification.requestPermission()
     if (permission === 'granted' && user?.id) {
       await registerFcmToken(user.id)
