@@ -16,6 +16,24 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Returns 'ALL' for full access, [] for no access, or an array of allowed audience values.
+const getAllowedAudiences = (user, roleFlags) => {
+  const { isBranchHead, isSystemAdmin } = roleFlags
+  if (isSystemAdmin || isBranchHead) return 'ALL'
+  const types = user?.roleTypes?.length ? user.roleTypes : (user?.roleType ? [user.roleType] : [])
+  if (types.includes('cohesion_coordinator')) return 'ALL'
+  const map = {
+    night_coordinator:     ['night'],
+    shabbat_coordinator:   ['shabbat'],
+    transport_coordinator: ['vehicle', 'ambulance'],
+    car_coordinator:       ['vehicle'],
+    ambulance_coordinator: ['ambulance'],
+  }
+  const allowed = new Set()
+  types.forEach(t => (map[t] || []).forEach(a => allowed.add(a)))
+  return [...allowed]
+}
+
 const TARGET_OPTIONS = [
   { value: 'all',       label: 'כל המתנדבים',        icon: '📢' },
   { value: 'night',     label: 'תורני לילה בלבד',    icon: '🌙' },
@@ -78,10 +96,12 @@ function formatTs(ts) {
 
 // ── Send form (inline) ────────────────────────────────────────────────────────
 
-function SendMessageForm({ user, branchId, onSent, onCancel }) {
+function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel }) {
   const [title,       setTitle]       = useState('')
   const [body,        setBody]        = useState('')
-  const [targetGroup, setTargetGroup] = useState('all')
+  const [targetGroup, setTargetGroup] = useState(
+    allowedAudiences === 'ALL' ? 'all' : (Array.isArray(allowedAudiences) && allowedAudiences[0]) || 'all'
+  )
   const [sending,     setSending]     = useState(false)
   const [error,       setError]       = useState('')
   const [teams,       setTeams]       = useState([])
@@ -146,9 +166,10 @@ function SendMessageForm({ user, branchId, onSent, onCancel }) {
     }
   }
 
+  const fullAccess = allowedAudiences === 'ALL'
   const allTargetOptions = [
-    ...TARGET_OPTIONS,
-    ...teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, icon: '👥' })),
+    ...TARGET_OPTIONS.filter(o => fullAccess || (Array.isArray(allowedAudiences) && allowedAudiences.includes(o.value))),
+    ...(fullAccess ? teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, icon: '👥' })) : []),
   ]
   const selectedOption = allTargetOptions.find(o => o.value === targetGroup)
 
@@ -535,8 +556,8 @@ function MessageModal({ msg, user, onClose }) {
 export default function MessagesPage() {
   const { user } = useAuth()
   const { isBranchHead, isSystemAdmin, isRoleHolder } = useRole()
-
-  const canSend   = isBranchHead || isSystemAdmin || isRoleHolder
+  const allowedAudiences = getAllowedAudiences(user, { isBranchHead, isSystemAdmin })
+  const canSend = allowedAudiences === 'ALL' || (Array.isArray(allowedAudiences) && allowedAudiences.length > 0)
   const canDelete = isBranchHead || isSystemAdmin || user?.role === 'branch_deputy'
 
   // For system_admin: branch selected from dropdown. Others: their own branch.
@@ -635,6 +656,7 @@ export default function MessagesPage() {
           <SendMessageForm
             user={user}
             branchId={branchId}
+            allowedAudiences={allowedAudiences}
             onSent={handleSent}
             onCancel={() => setShowForm(false)}
           />
