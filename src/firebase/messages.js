@@ -1,6 +1,6 @@
 import {
   collection, addDoc, query, where, getDocs,
-  orderBy, onSnapshot, Timestamp, deleteDoc, doc,
+  orderBy, onSnapshot, Timestamp, deleteDoc, doc, setDoc, getDoc,
 } from 'firebase/firestore'
 import { db } from './config'
 
@@ -12,22 +12,18 @@ import { db } from './config'
 // ── Write ─────────────────────────────────────────────────────────────────────
 
 export const sendBranchMessage = async (
-  branchId,
-  senderId,
-  senderName,
-  title,
-  body,
-  targetGroup,
-  targetUserIds = []
+  branchId, senderId, senderName, title, body, targetGroup, targetUserIds = [], options = {}
 ) => {
+  const {
+    requiresAck = false,
+    messageType = 'normal',
+    choiceOptions = [],
+    isCritical = false,
+  } = options
   return addDoc(collection(db, 'branch_messages'), {
-    branchId,
-    senderId,
-    senderName,
-    title,
-    body,
-    targetGroup,
-    targetUserIds,
+    branchId, senderId, senderName, title, body,
+    targetGroup, targetUserIds,
+    requiresAck, messageType, choiceOptions, isCritical,
     createdAt: Timestamp.now(),
   })
 }
@@ -74,6 +70,65 @@ export const deleteBranchMessage = async (msgId) => {
   const q    = query(collection(db, 'notifications'), where('messageId', '==', msgId))
   const snap = await getDocs(q)
   await Promise.all(snap.docs.map(d => deleteDoc(d.ref)))
+  // Delete linked receipts
+  const rq    = query(collection(db, 'message_receipts'), where('messageId', '==', msgId))
+  const rsnap = await getDocs(rq)
+  await Promise.all(rsnap.docs.map(d => deleteDoc(d.ref)))
+}
+
+// ── Message receipts ──────────────────────────────────────────────────────────
+
+export const submitMessageReceipt = async (messageId, branchId, userId, userName, { status = 'read', choice = null } = {}) => {
+  const ref = doc(db, 'message_receipts', `${messageId}_${userId}`)
+  await setDoc(ref, {
+    messageId, branchId, userId, userName,
+    status,
+    choice,
+    respondedAt: Timestamp.now(),
+  })
+}
+
+export const getMessageReceipts = async (messageId) => {
+  const q = query(collection(db, 'message_receipts'), where('messageId', '==', messageId))
+  const snap = await getDocs(q)
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+}
+
+export const getUserMessageReceipt = async (messageId, userId) => {
+  const snap = await getDoc(doc(db, 'message_receipts', `${messageId}_${userId}`))
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null
+}
+
+export const getPendingCriticalMessages = async (branchId, userId) => {
+  const q = query(
+    collection(db, 'branch_messages'),
+    where('branchId', '==', branchId)
+  )
+  const snap = await getDocs(q)
+  const msgs = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(m => m.isCritical === true)
+    .filter(m => Array.isArray(m.targetUserIds) && m.targetUserIds.includes(userId))
+
+  if (msgs.length === 0) return []
+
+  const pending = []
+  for (const m of msgs) {
+    try {
+      const r = await getUserMessageReceipt(m.id, userId)
+      if (!r) pending.push(m)
+    } catch (err) {
+      console.error('[critical] receipt check FAILED for', m.id, err)
+      pending.push(m)
+    }
+  }
+  pending.sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0))
+  return pending
+}
+
+export const getMessageById = async (messageId) => {
+  const snap = await getDoc(doc(db, 'branch_messages', messageId))
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
 // ── Target user resolution ────────────────────────────────────────────────────

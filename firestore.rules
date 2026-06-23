@@ -310,5 +310,22 @@ service cloud.firestore {
             && isBranchMember(resource.data.branchId))
       );
     }
+
+    // Message receipts — read/ack tracking for branch_messages
+    match /message_receipts/{receiptId} {
+      allow read: if isAuth() && (
+        isSystemAdmin()
+        || isBranchMember(resource.data.branchId)
+      );
+      allow create, update: if isAuth() && (
+        isSystemAdmin()
+        || (request.resource.data.userId == request.auth.uid
+            && getUserData().branchId == request.resource.data.branchId)
+      );
+      allow delete: if isAuth() && (
+        isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
+      );
+    }
   }
 }

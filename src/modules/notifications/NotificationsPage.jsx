@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { he } from 'date-fns/locale'
 import { db } from '../../firebase/config'
 import { markAsRead, markAllAsRead } from '../../firebase/notifications'
+import { getMessageById, submitMessageReceipt, getUserMessageReceipt } from '../../firebase/messages'
 import { useAuth } from '../../context/AuthContext'
 import LoadingSpinner from '../../shared/LoadingSpinner'
 import { Moon, Star, UsersThree, MegaphoneSimple, Bell, CheckCircle, X } from '@phosphor-icons/react'
@@ -101,7 +102,30 @@ function NotificationRow({ n, onOpen }) {
 
 // ── Notification modal ────────────────────────────────────────────────────────
 
-function NotificationModal({ n, onClose, onRead }) {
+function NotificationModal({ n, user, onClose, onRead }) {
+  const [linkedMsg,  setLinkedMsg]  = useState(null)
+  const [receipt,    setReceipt]    = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!n.messageId) return
+    getMessageById(n.messageId).then(setLinkedMsg).catch(() => {})
+    if (user?.id) getUserMessageReceipt(n.messageId, user.id).then(setReceipt).catch(() => {})
+  }, [n.messageId, user?.id])
+
+  const needsResponse = linkedMsg && (linkedMsg.requiresAck || linkedMsg.messageType === 'choice')
+
+  const handleAck = async (choice = null) => {
+    if (!user?.id || !linkedMsg) return
+    setSubmitting(true)
+    try {
+      await submitMessageReceipt(linkedMsg.id, linkedMsg.branchId, user.id, `${user.firstName} ${user.lastName}`, { status: 'read', choice })
+      const updated = await getUserMessageReceipt(linkedMsg.id, user.id)
+      setReceipt(updated)
+    } catch (e) { console.error(e) }
+    finally { setSubmitting(false) }
+  }
+
   const handleClose = () => {
     if (!n.isRead) onRead(n.id)
     onClose()
@@ -138,6 +162,37 @@ function NotificationModal({ n, onClose, onRead }) {
 
         {/* Date */}
         <p className="text-xs text-gray-400 mb-5">{relativeTime(n.createdAt)}</p>
+
+        {/* Response area (ack / choice) */}
+        {needsResponse && (
+          <div className="border-t border-gray-100 pt-4 mb-4">
+            {receipt ? (
+              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+                <CheckCircle size={18} weight="fill" className="text-green-600" />
+                {linkedMsg.messageType === 'choice'
+                  ? <span>תשובתך נשמרה: <strong>{receipt.choice}</strong></span>
+                  : <span>אישרת קריאת ההודעה</span>}
+              </div>
+            ) : linkedMsg.messageType === 'choice' ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">בחר תשובה:</p>
+                <div className="flex flex-wrap gap-2">
+                  {(linkedMsg.choiceOptions || []).map((opt, i) => (
+                    <button key={i} disabled={submitting} onClick={() => handleAck(opt)}
+                      className="px-4 py-2 rounded-xl text-sm font-medium bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white transition">
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <button disabled={submitting} onClick={() => handleAck()}
+                className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
+                <CheckCircle size={18} /> {submitting ? 'שומר...' : 'אישור קריאה'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Close + mark read */}
         <button
@@ -313,6 +368,7 @@ export default function NotificationsPage() {
       {selectedNotif && (
         <NotificationModal
           n={selectedNotif}
+          user={user}
           onClose={() => setSelectedNotif(null)}
           onRead={handleRead}
         />

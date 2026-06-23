@@ -3,7 +3,7 @@ import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
 import { useAuth } from '../../context/AuthContext'
 import { useRole } from '../../hooks/useRole'
-import { subscribeBranchMessages, sendBranchMessage, getTargetUsers, deleteBranchMessage } from '../../firebase/messages'
+import { subscribeBranchMessages, sendBranchMessage, getTargetUsers, deleteBranchMessage, submitMessageReceipt, getUserMessageReceipt } from '../../firebase/messages'
 import { createBulkNotifications } from '../../firebase/notifications'
 import { getBranchSettings } from '../../firebase/branches'
 import LoadingSpinner from '../../shared/LoadingSpinner'
@@ -86,6 +86,14 @@ function SendMessageForm({ user, branchId, onSent, onCancel }) {
   const [error,       setError]       = useState('')
   const [teams,       setTeams]       = useState([])
 
+  const [requiresAck,    setRequiresAck]    = useState(false)
+  const [isCritical,     setIsCritical]     = useState(false)
+  const [messageType,    setMessageType]    = useState('normal')
+  const [choiceMode,     setChoiceMode]     = useState('default')
+  const [customOptions,  setCustomOptions]  = useState(['', ''])
+
+  const DEFAULT_CHOICES = ['כן', 'לא', 'אולי']
+
   useEffect(() => {
     if (!branchId) return
     getBranchSettings(branchId)
@@ -108,10 +116,26 @@ function SendMessageForm({ user, branchId, onSent, onCancel }) {
       const targets    = await getTargetUsers(branchId, targetGroup)
       const targetIds  = targets.map(u => u.id)
 
-      // 2. Save message — capture the new doc ID to link notifications
-      const msgRef = await sendBranchMessage(branchId, user.id, senderName, title.trim(), body.trim(), targetGroup, targetIds)
+      // 2. Resolve choice options if this is a choice message
+      let choiceOptions = []
+      if (messageType === 'choice') {
+        choiceOptions = choiceMode === 'default'
+          ? DEFAULT_CHOICES
+          : customOptions.map(o => o.trim()).filter(Boolean)
+        if (choiceOptions.length < 2) {
+          setError('יש להזין לפחות שתי אפשרויות בחירה')
+          setSending(false)
+          return
+        }
+      }
 
-      // 3. Fan-out notifications (carry messageId so delete can clean them up)
+      // 3. Save message — capture the new doc ID to link notifications
+      const msgRef = await sendBranchMessage(
+        branchId, user.id, senderName, title.trim(), body.trim(), targetGroup, targetIds,
+        { requiresAck: requiresAck || isCritical, messageType, choiceOptions, isCritical }
+      )
+
+      // 4. Fan-out notifications (carry messageId so delete can clean them up)
       await createBulkNotifications(targetIds, branchId, title.trim(), body.trim(), 'general', { messageId: msgRef.id })
 
       onSent(targets.length)
@@ -184,6 +208,82 @@ function SendMessageForm({ user, branchId, onSent, onCancel }) {
           {selectedOption?.icon} ההודעה תישלח ל{selectedOption?.label}
         </p>
       </div>
+
+      {/* Message type */}
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">סוג הודעה</label>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setMessageType('normal')}
+            className={`flex-1 py-2 rounded-xl text-sm font-medium transition border ${
+              messageType === 'normal' ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}`}>
+            הודעה רגילה
+          </button>
+          <button type="button" onClick={() => setMessageType('choice')}
+            className={`flex-1 py-2 rounded-xl text-sm font-medium transition border ${
+              messageType === 'choice' ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}`}>
+            שאלה עם בחירה
+          </button>
+        </div>
+      </div>
+
+      {/* Choice options (only for choice type) */}
+      {messageType === 'choice' && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-3">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setChoiceMode('default')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition border ${
+                choiceMode === 'default' ? 'bg-white border-orange-300 text-orange-600' : 'bg-transparent border-gray-200 text-gray-500'}`}>
+              כן / לא / אולי
+            </button>
+            <button type="button" onClick={() => setChoiceMode('custom')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition border ${
+                choiceMode === 'custom' ? 'bg-white border-orange-300 text-orange-600' : 'bg-transparent border-gray-200 text-gray-500'}`}>
+              אפשרויות מותאמות
+            </button>
+          </div>
+          {choiceMode === 'default' ? (
+            <p className="text-xs text-gray-500">הנמענים יבחרו: כן / לא / אולי</p>
+          ) : (
+            <div className="space-y-2">
+              {customOptions.map((opt, i) => (
+                <div key={i} className="flex gap-2">
+                  <input type="text" value={opt}
+                    onChange={e => setCustomOptions(prev => prev.map((o, idx) => idx === i ? e.target.value : o))}
+                    placeholder={`אפשרות ${i + 1}`}
+                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-orange-500" />
+                  {customOptions.length > 2 && (
+                    <button type="button" onClick={() => setCustomOptions(prev => prev.filter((_, idx) => idx !== i))}
+                      className="text-red-400 hover:text-red-500 px-2"><X size={16} /></button>
+                  )}
+                </div>
+              ))}
+              {customOptions.length < 6 && (
+                <button type="button" onClick={() => setCustomOptions(prev => [...prev, ''])}
+                  className="text-xs text-orange-500 hover:text-orange-600 font-medium">+ הוסף אפשרות</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Require acknowledgment */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={requiresAck} onChange={e => setRequiresAck(e.target.checked)}
+          className="w-4 h-4 accent-orange-500" />
+        <span className="text-sm text-gray-700">דרוש אישור קריאה מהנמענים</span>
+      </label>
+
+      {/* Critical — blocking popup on app entry */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={isCritical} onChange={e => setIsCritical(e.target.checked)}
+          className="w-4 h-4 accent-red-500" />
+        <span className="text-sm text-gray-700">הודעה קריטית — תקפוץ למסך בכניסה לאפליקציה עד לאישור</span>
+      </label>
+      {isCritical && (
+        <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+          שים לב: הודעה קריטית תיחסם על מסך הנמען עד שיאשר קריאה. השתמש רק להודעות דחופות באמת.
+        </p>
+      )}
 
       {error && (
         <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
@@ -306,11 +406,36 @@ function MessageCard({ msg, onOpen, canDelete, onDelete }) {
 
 // ── Message modal ─────────────────────────────────────────────────────────────
 
-function MessageModal({ msg, onClose }) {
+function MessageModal({ msg, user, onClose }) {
   const tgLabel = TARGET_OPTIONS.find(o => o.value === msg.targetGroup)?.label
     ?? (msg.targetGroup?.startsWith('team:')
         ? `צוות ${msg.targetGroup.slice(5)}`
         : 'כל המתנדבים')
+
+  const [receipt,    setReceipt]    = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const needsResponse = msg.requiresAck || msg.messageType === 'choice'
+
+  useEffect(() => {
+    if (!needsResponse || !user?.id) return
+    getUserMessageReceipt(msg.id, user.id)
+      .then(setReceipt)
+      .catch(() => {})
+  }, [msg.id, user?.id])
+
+  const handleAck = async (choice = null) => {
+    if (!user?.id) return
+    setSubmitting(true)
+    try {
+      await submitMessageReceipt(msg.id, msg.branchId, user.id, `${user.firstName} ${user.lastName}`, { status: 'read', choice })
+      const updated = await getUserMessageReceipt(msg.id, user.id)
+      setReceipt(updated)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div
@@ -360,6 +485,39 @@ function MessageModal({ msg, onClose }) {
             <span className="text-gray-800">{formatTs(msg.createdAt)}</span>
           </div>
         </div>
+
+        {/* Response area (ack / choice) */}
+        {needsResponse && (
+          <div className="border-t border-gray-100 pt-4 mt-4">
+            {receipt ? (
+              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+                <CheckCircle size={18} weight="fill" className="text-green-600" />
+                {msg.messageType === 'choice'
+                  ? <span>תשובתך נשמרה: <strong>{receipt.choice}</strong></span>
+                  : <span>אישרת קריאת ההודעה</span>}
+              </div>
+            ) : msg.messageType === 'choice' ? (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">בחר תשובה:</p>
+                <div className="flex flex-wrap gap-2">
+                  {(msg.choiceOptions || []).map((opt, i) => (
+                    <button key={i} disabled={submitting}
+                      onClick={() => handleAck(opt)}
+                      className="px-4 py-2 rounded-xl text-sm font-medium bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white transition">
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <button disabled={submitting}
+                onClick={() => handleAck()}
+                className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
+                <CheckCircle size={18} /> {submitting ? 'שומר...' : 'אישור קריאה'}
+              </button>
+            )}
+          </div>
+        )}
 
         <button
           onClick={onClose}
@@ -524,7 +682,7 @@ export default function MessagesPage() {
 
       {/* Message detail modal */}
       {selectedMsg && (
-        <MessageModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} />
+        <MessageModal msg={selectedMsg} user={user} onClose={() => setSelectedMsg(null)} />
       )}
 
     </div>

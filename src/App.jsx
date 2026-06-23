@@ -22,6 +22,7 @@ import MyTransportPage from './pages/MyTransportPage'
 import ContactsPage from './pages/ContactsPage'
 import ReportsPage from './modules/reports/ReportsPage'
 import InstallPrompt from './shared/InstallPrompt'
+import CriticalMessageGate from './shared/CriticalMessageGate'
 
 // ── Notification permission banner ────────────────────────────────────────────
 function NotificationBanner({ onApprove, onDismiss }) {
@@ -133,6 +134,7 @@ function AppLayout() {
           </Routes>
         </main>
       </div>
+      <CriticalMessageGate />
       <InstallPrompt />
       {showBanner && <NotificationBanner onApprove={handleApprove} onDismiss={handleDismiss} />}
     </div>
