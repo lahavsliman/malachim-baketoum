@@ -18,12 +18,11 @@ export const sendBranchMessage = async (
     requiresAck = false,
     messageType = 'normal',
     choiceOptions = [],
-    isCritical = false,
   } = options
   return addDoc(collection(db, 'branch_messages'), {
     branchId, senderId, senderName, title, body,
     targetGroup, targetUserIds,
-    requiresAck, messageType, choiceOptions, isCritical,
+    requiresAck, messageType, choiceOptions,
     createdAt: Timestamp.now(),
   })
 }
@@ -89,9 +88,14 @@ export const submitMessageReceipt = async (messageId, branchId, userId, userName
 }
 
 export const getMessageReceipts = async (messageId) => {
-  const q = query(collection(db, 'message_receipts'), where('messageId', '==', messageId))
-  const snap = await getDocs(q)
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  try {
+    const q = query(collection(db, 'message_receipts'), where('messageId', '==', messageId))
+    const snap = await getDocs(q)
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  } catch (err) {
+    console.error('[receipts] query FAILED:', err)
+    return []
+  }
 }
 
 export const getUserMessageReceipt = async (messageId, userId) => {
@@ -99,7 +103,7 @@ export const getUserMessageReceipt = async (messageId, userId) => {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-export const getPendingCriticalMessages = async (branchId, userId) => {
+export const getPendingAckMessages = async (branchId, userId) => {
   const q = query(
     collection(db, 'branch_messages'),
     where('branchId', '==', branchId)
@@ -107,7 +111,7 @@ export const getPendingCriticalMessages = async (branchId, userId) => {
   const snap = await getDocs(q)
   const msgs = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .filter(m => m.isCritical === true)
+    .filter(m => m.requiresAck === true)
     .filter(m => Array.isArray(m.targetUserIds) && m.targetUserIds.includes(userId))
 
   if (msgs.length === 0) return []
@@ -118,7 +122,7 @@ export const getPendingCriticalMessages = async (branchId, userId) => {
       const r = await getUserMessageReceipt(m.id, userId)
       if (!r) pending.push(m)
     } catch (err) {
-      console.error('[critical] receipt check FAILED for', m.id, err)
+      console.error('[ack] receipt check FAILED for', m.id, err)
       pending.push(m)
     }
   }

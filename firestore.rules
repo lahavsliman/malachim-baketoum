@@ -313,10 +313,15 @@ service cloud.firestore {
 
     // Message receipts — read/ack tracking for branch_messages
     match /message_receipts/{receiptId} {
-      allow read: if isAuth() && (
+      // Single-doc read: can verify branch membership
+      allow get: if isAuth() && (
         isSystemAdmin()
         || isBranchMember(resource.data.branchId)
       );
+      // List/query: client filters by messageId via where(); getUserData() inside
+      // a list rule causes Firestore to reject the query statically, so we only
+      // require authentication here (same approach as events/event_responses).
+      allow list: if isAuth();
       allow create, update: if isAuth() && (
         isSystemAdmin()
         || (request.resource.data.userId == request.auth.uid

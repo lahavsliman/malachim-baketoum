@@ -10,8 +10,8 @@ import { getBranchUsers } from '../../firebase/users'
 import LoadingSpinner from '../../shared/LoadingSpinner'
 import BranchSelector from '../../shared/BranchSelector'
 import {
-  MegaphoneSimple, Moon, Star, UsersThree, Globe,
-  Car, Ambulance, EnvelopeSimple, GenderMale, GenderFemale, CheckCircle,
+  MegaphoneSimple, Megaphone, Moon, Star, UsersThree, Globe,
+  Car, Ambulance, Truck, EnvelopeSimple, GenderMale, GenderFemale, CheckCircle,
   Trash, X, BellRinging,
 } from '@phosphor-icons/react'
 
@@ -36,24 +36,14 @@ const getAllowedAudiences = (user, roleFlags) => {
 }
 
 const TARGET_OPTIONS = [
-  { value: 'all',       label: 'כל המתנדבים',        icon: '📢' },
-  { value: 'night',     label: 'תורני לילה בלבד',    icon: '🌙' },
-  { value: 'shabbat',   label: 'תורני שבת בלבד',     icon: '🕍' },
-  { value: 'vehicle',   label: 'נהגי רכב בלבד',      icon: '🚗' },
-  { value: 'ambulance', label: 'נהגי אמבולנס בלבד',  icon: '🚑' },
-  { value: 'female',    label: 'נשים בלבד',           icon: '♀' },
-  { value: 'male',      label: 'גברים בלבד',          icon: '♂' },
+  { value: 'all',       label: 'כל המתנדבים',        Icon: Megaphone },
+  { value: 'night',     label: 'תורני לילה בלבד',    Icon: Moon },
+  { value: 'shabbat',   label: 'תורני שבת בלבד',     Icon: Star },
+  { value: 'vehicle',   label: 'נהגי רכב בלבד',      Icon: Car },
+  { value: 'ambulance', label: 'נהגי אמבולנס בלבד',  Icon: Truck },
+  { value: 'female',    label: 'נשים בלבד',           Icon: GenderFemale },
+  { value: 'male',      label: 'גברים בלבד',          Icon: GenderMale },
 ]
-
-// Emoji strings kept for <option> elements (can't render JSX inside <option>)
-const GROUP_ICONS = {
-  all:       '📢',
-  night:     '🌙',
-  shabbat:   '🕍',
-  vehicle:   '🚗',
-  ambulance: '🚑',
-  custom:    '👥',
-}
 
 // Phosphor component version for use in JSX spans/divs
 function GroupIconComp({ group, size = 20 }) {
@@ -108,7 +98,6 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
   const [teams,       setTeams]       = useState([])
 
   const [requiresAck,    setRequiresAck]    = useState(false)
-  const [isCritical,     setIsCritical]     = useState(false)
   const [messageType,    setMessageType]    = useState('normal')
   const [choiceMode,     setChoiceMode]     = useState('default')
   const [customOptions,  setCustomOptions]  = useState(['', ''])
@@ -153,7 +142,7 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
       // 3. Save message — capture the new doc ID to link notifications
       const msgRef = await sendBranchMessage(
         branchId, user.id, senderName, title.trim(), body.trim(), targetGroup, targetIds,
-        { requiresAck: requiresAck || isCritical, messageType, choiceOptions, isCritical }
+        { requiresAck, messageType, choiceOptions }
       )
 
       // 4. Fan-out notifications (carry messageId so delete can clean them up)
@@ -170,7 +159,7 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
   const fullAccess = allowedAudiences === 'ALL'
   const allTargetOptions = [
     ...TARGET_OPTIONS.filter(o => fullAccess || (Array.isArray(allowedAudiences) && allowedAudiences.includes(o.value))),
-    ...(fullAccess ? teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, icon: '👥' })) : []),
+    ...(fullAccess ? teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, Icon: UsersThree })) : []),
   ]
   const selectedOption = allTargetOptions.find(o => o.value === targetGroup)
 
@@ -213,21 +202,28 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
       {/* Target group */}
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1.5">קהל יעד</label>
-        <div className="relative">
-          <select
-            value={targetGroup}
-            onChange={e => setTargetGroup(e.target.value)}
-            className="w-full bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900
-                       focus:outline-none focus:border-orange-500 transition appearance-none"
-          >
-            {allTargetOptions.map(o => (
-              <option key={o.value} value={o.value}>{o.icon} {o.label}</option>
-            ))}
-          </select>
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">▾</span>
+        <div className="grid grid-cols-2 gap-2">
+          {allTargetOptions.map(o => {
+            const active = targetGroup === o.value
+            const Ic = o.Icon
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setTargetGroup(o.value)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition text-right
+                  ${active
+                    ? 'bg-orange-50 border-orange-300 text-orange-700'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+              >
+                {Ic && <Ic size={18} className={active ? 'text-orange-500' : 'text-gray-400'} weight={active ? 'fill' : 'regular'} />}
+                <span className="flex-1">{o.label}</span>
+              </button>
+            )
+          })}
         </div>
-        <p className="text-xs text-gray-500 mt-1.5">
-          {selectedOption?.icon} ההודעה תישלח ל{selectedOption?.label}
+        <p className="text-xs text-gray-500 mt-2">
+          ההודעה תישלח ל{selectedOption?.label}
         </p>
       </div>
 
@@ -292,20 +288,8 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
       <label className="flex items-center gap-2 cursor-pointer">
         <input type="checkbox" checked={requiresAck} onChange={e => setRequiresAck(e.target.checked)}
           className="w-4 h-4 accent-orange-500" />
-        <span className="text-sm text-gray-700">דרוש אישור קריאה מהנמענים</span>
+        <span className="text-sm text-gray-700">דרוש אישור קריאה (ההודעה תוצג לנמען בכניסה לאפליקציה עד לאישור)</span>
       </label>
-
-      {/* Critical — blocking popup on app entry */}
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={isCritical} onChange={e => setIsCritical(e.target.checked)}
-          className="w-4 h-4 accent-red-500" />
-        <span className="text-sm text-gray-700">הודעה קריטית — תקפוץ למסך בכניסה לאפליקציה עד לאישור</span>
-      </label>
-      {isCritical && (
-        <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-          שים לב: הודעה קריטית תיחסם על מסך הנמען עד שיאשר קריאה. השתמש רק להודעות דחופות באמת.
-        </p>
-      )}
 
       {error && (
         <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
@@ -749,8 +733,17 @@ export default function MessagesPage() {
   }, [branchId])
 
   // Permission-based message filter for regular volunteers
+  // Only branch_head / branch_deputy / system_admin see ALL branch messages.
+  const canSeeAllMessages = isBranchHead || isSystemAdmin || user?.role === 'branch_deputy'
+
   const userMatchesMessage = (msg) => {
-    if (canSend) return true  // managers/coordinators see all messages
+    if (canSeeAllMessages) return true
+    // Everyone else (including coordinators & volunteers) sees only messages targeted to them.
+    // Prefer the saved recipient snapshot when available (most accurate).
+    if (Array.isArray(msg.targetUserIds) && msg.targetUserIds.length > 0) {
+      return msg.targetUserIds.includes(user?.id)
+    }
+    // Fallback for older messages without a recipient snapshot: match by targetGroup.
     const tg = msg.targetGroup
     if (!tg || tg === 'all')   return true
     if (tg === 'custom')       return msg.targetUserIds?.includes(user?.id) ?? false
