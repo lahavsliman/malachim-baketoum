@@ -3,15 +3,16 @@ import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
 import { useAuth } from '../../context/AuthContext'
 import { useRole } from '../../hooks/useRole'
-import { subscribeBranchMessages, sendBranchMessage, getTargetUsers, deleteBranchMessage, submitMessageReceipt, getUserMessageReceipt } from '../../firebase/messages'
+import { subscribeBranchMessages, sendBranchMessage, getTargetUsers, deleteBranchMessage, submitMessageReceipt, getUserMessageReceipt, getMessageReceipts } from '../../firebase/messages'
 import { createBulkNotifications } from '../../firebase/notifications'
 import { getBranchSettings } from '../../firebase/branches'
+import { getBranchUsers } from '../../firebase/users'
 import LoadingSpinner from '../../shared/LoadingSpinner'
 import BranchSelector from '../../shared/BranchSelector'
 import {
   MegaphoneSimple, Moon, Star, UsersThree, Globe,
   Car, Ambulance, EnvelopeSimple, GenderMale, GenderFemale, CheckCircle,
-  Trash, X,
+  Trash, X, BellRinging,
 } from '@phosphor-icons/react'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -337,7 +338,7 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
 
 // ── Message card ──────────────────────────────────────────────────────────────
 
-function MessageCard({ msg, onOpen, canDelete, onDelete }) {
+function MessageCard({ msg, onOpen, canDelete, onDelete, onTrack }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const preview = msg.body?.length > 120 ? msg.body.slice(0, 120) + '…' : msg.body
 
@@ -358,6 +359,15 @@ function MessageCard({ msg, onOpen, canDelete, onDelete }) {
             <h3 className="font-bold text-gray-900 leading-snug">{msg.title}</h3>
             <div className="flex items-center gap-2 shrink-0 mt-0.5">
               <span className="text-xs text-gray-500">{formatTs(msg.createdAt)}</span>
+              {canDelete && (msg.requiresAck || msg.messageType === 'choice') && (
+                <button
+                  onClick={e => { e.stopPropagation(); onTrack(msg) }}
+                  className="text-orange-500 hover:text-orange-600 transition p-1"
+                  title="מעקב קריאה"
+                >
+                  <CheckCircle size={18} />
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={e => { e.stopPropagation(); setConfirmDelete(true) }}
@@ -551,6 +561,162 @@ function MessageModal({ msg, user, onClose }) {
   )
 }
 
+// ── Tracking modal ────────────────────────────────────────────────────────────
+
+function TrackingModal({ msg, branchId, onClose }) {
+  const [receipts,    setReceipts]    = useState([])
+  const [branchUsers, setBranchUsers] = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [reminding,   setReminding]   = useState(false)
+  const [reminded,    setReminded]    = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const bid = branchId || msg.branchId
+    setLoading(true)
+    Promise.all([
+      getMessageReceipts(msg.id).catch(e => { console.error('[tracking] receipts err', e); return [] }),
+      getBranchUsers(bid).catch(e => { console.error('[tracking] users err', e); return [] }),
+    ]).then(([rcpts, us]) => {
+      if (!active) return
+      setReceipts(rcpts)
+      setBranchUsers(us)
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [msg.id, branchId])
+
+  const respondedIds   = new Set(receipts.map(r => r.userId))
+  const respondedCount = respondedIds.size
+  const totalCount     = msg.targetUserIds?.length || 0
+  const pendingCount   = Math.max(0, totalCount - respondedCount)
+
+  const userById     = Object.fromEntries(branchUsers.map(u => [u.id, u]))
+  const targetIds    = msg.targetUserIds || []
+  const respondedNames = targetIds
+    .filter(id => respondedIds.has(id))
+    .map(id => userById[id] ? `${userById[id].firstName} ${userById[id].lastName}` : (receipts.find(r => r.userId === id)?.userName || 'לא ידוע'))
+  const pendingNames = targetIds
+    .filter(id => !respondedIds.has(id))
+    .map(id => userById[id] ? `${userById[id].firstName} ${userById[id].lastName}` : 'לא ידוע')
+
+  const choiceBreakdown = {}
+  if (msg.messageType === 'choice') {
+    ;(msg.choiceOptions || []).forEach(o => { choiceBreakdown[o] = [] })
+    receipts.forEach(r => {
+      if (r.choice && choiceBreakdown[r.choice] !== undefined) choiceBreakdown[r.choice].push(r.userName)
+      else if (r.choice) choiceBreakdown[r.choice] = [r.userName]
+    })
+  }
+
+  const handleReminder = async () => {
+    setReminding(true)
+    try {
+      const pendingIds = (msg.targetUserIds || []).filter(id => !respondedIds.has(id))
+      if (pendingIds.length) {
+        await createBulkNotifications(pendingIds, branchId || msg.branchId, `תזכורת: ${msg.title}`, msg.body, 'general', { messageId: msg.id })
+      }
+      setReminded(true)
+    } catch (e) { console.error(e) }
+    finally { setReminding(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={e => e.target === e.currentTarget && onClose()} dir="rtl">
+      <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">מעקב קריאה</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <p className="text-sm text-gray-500 mb-4 truncate">{msg.title}</p>
+
+        {loading ? (
+          <div className="py-10 flex justify-center"><LoadingSpinner size="md" text="טוען..." /></div>
+        ) : (
+          <>
+            {/* Summary */}
+            <div className="flex gap-3 mb-5">
+              <div className="flex-1 bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-green-600">{respondedCount}</p>
+                <p className="text-xs text-gray-600">{msg.messageType === 'choice' ? 'ענו' : 'אישרו'}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-gray-400">{pendingCount}</p>
+                <p className="text-xs text-gray-600">ממתינים</p>
+              </div>
+              <div className="flex-1 bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-orange-500">{totalCount}</p>
+                <p className="text-xs text-gray-600">סה״כ</p>
+              </div>
+            </div>
+
+            {/* Choice breakdown */}
+            {msg.messageType === 'choice' && (
+              <div className="mb-5 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">פילוח תשובות:</p>
+                {Object.entries(choiceBreakdown).map(([opt, names]) => (
+                  <div key={opt} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-800">{opt}</span>
+                      <span className="text-sm font-bold text-orange-500">{names.length}</span>
+                    </div>
+                    {names.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-1">{names.join(', ')}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Who responded */}
+            {respondedNames.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-green-600 mb-2">{msg.messageType === 'choice' ? 'ענו' : 'אישרו'} ({respondedNames.length}):</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {respondedNames.map((name, i) => (
+                    <span key={i} className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">{name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Who hasn't responded */}
+            {pendingNames.length > 0 && (
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-gray-500 mb-2">טרם הגיבו ({pendingNames.length}):</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {pendingNames.map((name, i) => (
+                    <span key={i} className="text-xs bg-gray-50 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">{name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Reminder button */}
+            {pendingCount > 0 && (
+              reminded ? (
+                <div className="text-center text-sm text-green-600 bg-green-50 border border-green-200 rounded-xl py-2.5">
+                  התזכורת נשלחה ל-{pendingCount} ממתינים
+                </div>
+              ) : (
+                <button onClick={handleReminder} disabled={reminding}
+                  className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
+                  <BellRinging size={18} /> {reminding ? 'שולח...' : `שלח תזכורת ל-${pendingCount} ממתינים`}
+                </button>
+              )
+            )}
+          </>
+        )}
+
+        <button onClick={onClose} className="w-full mt-3 bg-gray-100 hover:bg-gray-200 text-gray-800 py-2.5 rounded-xl font-medium transition">
+          סגור
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
@@ -569,6 +735,7 @@ export default function MessagesPage() {
   const [showForm,    setShowForm]    = useState(false)
   const [successMsg,  setSuccessMsg]  = useState('')
   const [selectedMsg, setSelectedMsg] = useState(null)
+  const [trackingMsg, setTrackingMsg] = useState(null)
 
   // Real-time subscription
   useEffect(() => {
@@ -697,6 +864,7 @@ export default function MessagesPage() {
               onOpen={setSelectedMsg}
               canDelete={canDelete}
               onDelete={handleDelete}
+              onTrack={setTrackingMsg}
             />
           ))}
         </div>
@@ -705,6 +873,11 @@ export default function MessagesPage() {
       {/* Message detail modal */}
       {selectedMsg && (
         <MessageModal msg={selectedMsg} user={user} onClose={() => setSelectedMsg(null)} />
+      )}
+
+      {/* Tracking modal */}
+      {trackingMsg && (
+        <TrackingModal msg={trackingMsg} branchId={branchId} onClose={() => setTrackingMsg(null)} />
       )}
 
     </div>

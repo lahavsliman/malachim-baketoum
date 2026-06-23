@@ -69,15 +69,19 @@ export default function Header({ onMenuToggle }) {
             ☰
           </button>
         )}
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 hover:opacity-80 transition cursor-pointer"
+          aria-label="חזרה לעמוד הראשי"
+        >
           <img src="/logo.svg" alt="לוגו" className="h-16 w-16 object-contain" />
-          <div>
+          <div className="text-right">
             <span className="font-bold text-orange-400 text-lg leading-none block">מלאכים בכתום</span>
             {user?.role === 'system_admin'
               ? <span className="text-xs text-orange-400/80">מנהל מערכת</span>
               : branch && <span className="text-xs text-gray-500">סניף {branch.name}</span>}
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Right side: user info + bell + logout */}
