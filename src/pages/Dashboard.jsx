@@ -1,9 +1,10 @@
 ﻿import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { format, getDaysInMonth, isBefore, parseISO, nextFriday, isFriday, isThursday } from 'date-fns'
 import { he } from 'date-fns/locale'
 import { useAuth } from '../context/AuthContext'
 import { useRole } from '../hooks/useRole'
+import { useNavItems } from '../hooks/useNavItems'
 import { useBranch } from '../hooks/useBranch'
 import { getMonthShifts } from '../firebase/nightShifts'
 import { getShabbatShifts, getVolunteerMonthShabbatShifts, submitShabbatAvailability } from '../firebase/shabbatShifts'
@@ -105,6 +106,64 @@ const DashCard = ({ to, Icon, title, subtitle, color = 'orange' }) => {
   )
 }
 
+function NavGrid() {
+  const navItems = useNavItems()
+  const navigate = useNavigate()
+  const items = navItems.filter(i => i.to !== '/')
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      {items.map(item => (
+        <button
+          key={item.to}
+          onClick={() => navigate(item.to)}
+          className="bg-white border border-gray-100 shadow-sm rounded-2xl p-4 text-right hover:shadow-md hover:border-orange-200 transition group"
+        >
+          <div className="flex justify-end mb-2">
+            <item.Icon size={26} className="text-orange-500" weight="duotone" />
+          </div>
+          <p className="font-bold text-gray-900 text-sm">{item.label}</p>
+          {item.desc && <p className="text-xs text-gray-400 mt-0.5">{item.desc}</p>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function RecentNotifications({ userId }) {
+  const [notifs, setNotifs] = useState([])
+  useEffect(() => {
+    if (!userId) return
+    getUserNotifications(userId).then(setNotifs).catch(() => setNotifs([]))
+  }, [userId])
+
+  return (
+    <div className={`${card} overflow-hidden mt-6`}>
+      <div className={`flex items-center justify-between px-5 py-3 ${cardHdr}`}>
+        <h2 className={`font-bold ${txt1} text-sm`}>התראות אחרונות</h2>
+        <Link to="/notifications" className="text-xs text-orange-500 hover:text-orange-600 transition">
+          לכל ההתראות →
+        </Link>
+      </div>
+      {notifs.length === 0 ? (
+        <div className={`px-5 py-6 text-center ${txt3} text-sm`}>אין התראות</div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {notifs.slice(0, 3).map(n => (
+            <div key={n.id} className={`flex items-start gap-3 px-5 py-3 ${n.isRead ? '' : 'border-r-2 border-orange-400'}`}>
+              <span className="shrink-0 mt-0.5 flex items-center"><NotifIcon type={n.type} /></span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${n.isRead ? txt2 : txt1}`}>{n.title}</p>
+                {n.body && <p className={`text-xs ${txt3} truncate mt-0.5`}>{n.body}</p>}
+              </div>
+              <span className={`text-xs ${txt3} shrink-0 mt-0.5`}>{timeAgo(n.createdAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const getIsraelHour = () => {
   const now = new Date();
   const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
@@ -153,14 +212,8 @@ function GenericDashboard({ user, branch }) {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        {(hasNightShifts || canManageNightShifts) && <DashCard to="/night-shifts" Icon={Moon}       title="שיבוצי לילה" subtitle={canManageNightShifts ? 'ניהול שיבוצי לילה' : 'הרשמה ומעקב'} color="blue" />}
-        {(hasShabbat || canManageShabbat) && <DashCard to="/shabbat"           Icon={Star}       title="תורני שבת"   subtitle={canManageShabbat ? 'ניהול תורני שבת' : 'דווח זמינות'} color="purple" />}
-        {canAccessBuildingCodes && <DashCard to="/building-codes"              Icon={Buildings}  title="קודי בניין"  subtitle="חיפוש וניהול קודים" color="green" />}
-        {isBranchHead && <DashCard to="/branch-management"                     Icon={Sliders}    title="ניהול סניף"  subtitle="מתנדבים, הרשאות ותפקידים" color="orange" />}
-        {isSystemAdmin && <DashCard to="/system-admin"                         Icon={Globe}      title="כל הסניפים" subtitle="ניהול מערכת רחב" color="orange" />}
-        <DashCard to="/events" Icon={UsersThree} title="גיבושים" subtitle="אירועים וגיבושים" color="green" />
-      </div>
+      <NavGrid />
+      <RecentNotifications userId={user?.id} />
     </div>
   )
 }
@@ -357,6 +410,9 @@ function VolunteerDashboard({ user, branch }) {
         </div>
       </div>
 
+      {/* ── Nav cards ── */}
+      <NavGrid />
+
       {/* ── 2. Night Shift Urgency Banner ── */}
       {hasNight && !signedUpThisMonth && (
         <div className={`rounded-2xl px-5 py-4 border flex items-start gap-3
@@ -440,37 +496,6 @@ function VolunteerDashboard({ user, branch }) {
           )}
         </div>
       )}
-
-      {/* ── 4. Quick Actions ── */}
-      <div>
-        <h2 className={`text-xs font-semibold ${txt3} mb-3 px-1 uppercase tracking-wide`}>פעולות מהירות</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {hasNight && (
-            <Link to="/night-shifts"
-              className="flex flex-col items-center gap-2 bg-white border border-blue-100 hover:border-blue-200 hover:bg-blue-50 shadow-sm rounded-2xl p-4 transition text-center">
-              <Moon size={28} color="#3B82F6" />
-              <span className={`text-xs font-medium ${txt2} leading-tight`}>לשיבוץ<br/>לילה</span>
-            </Link>
-          )}
-          {hasShabbat && (
-            <Link to="/shabbat"
-              className="flex flex-col items-center gap-2 bg-white border border-purple-100 hover:border-purple-200 hover:bg-purple-50 shadow-sm rounded-2xl p-4 transition text-center">
-              <Star size={28} color="#9333EA" />
-              <span className={`text-xs font-medium ${txt2} leading-tight`}>לתורנות<br/>שבת</span>
-            </Link>
-          )}
-          <Link to="/messages"
-            className="flex flex-col items-center gap-2 bg-white border border-gray-100 hover:border-gray-200 hover:bg-gray-50 shadow-sm rounded-2xl p-4 transition text-center">
-            <ChatCircle size={28} color="#6B7280" />
-            <span className={`text-xs font-medium ${txt2}`}>הודעות</span>
-          </Link>
-          <Link to="/events"
-            className="flex flex-col items-center gap-2 bg-white border border-gray-100 hover:border-gray-200 hover:bg-gray-50 shadow-sm rounded-2xl p-4 transition text-center">
-            <UsersThree size={28} color="#6B7280" />
-            <span className={`text-xs font-medium ${txt2} leading-tight`}>גיבושים</span>
-          </Link>
-        </div>
-      </div>
 
       {/* ── 5. Recent Notifications ── */}
       <div className={`${card} overflow-hidden`}>
@@ -560,6 +585,7 @@ function BranchHeadDashboard({ user, branch }) {
   const [branchUsers,      setBranchUsers]      = useState([])
   const [codesCount,       setCodesCount]       = useState(0)
   const [selectedActivity, setSelectedActivity] = useState(null)
+  const [view,             setView]             = useState('cards')
 
   useEffect(() => {
     if (!user?.branchId) return
@@ -670,6 +696,27 @@ function BranchHeadDashboard({ user, branch }) {
           </div>
         </div>
       </div>
+
+      {/* ══ View toggle ══ */}
+      <div className="flex gap-2">
+        <button onClick={() => setView('cards')}
+          className={`flex-1 py-2 rounded-xl text-sm font-medium transition border ${view === 'cards' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+          מסך ראשי
+        </button>
+        <button onClick={() => setView('manage')}
+          className={`flex-1 py-2 rounded-xl text-sm font-medium transition border ${view === 'manage' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+          דשבורד ניהול
+        </button>
+      </div>
+
+      {view === 'cards' && (
+        <>
+          <NavGrid />
+          <RecentNotifications userId={user?.id} />
+        </>
+      )}
+
+      {view === 'manage' && <>
 
       {/* ══ 2. STATS ROW ══ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -876,27 +923,7 @@ function BranchHeadDashboard({ user, branch }) {
         </div>
       </div>
 
-      {/* ══ 7. QUICK ACTIONS ══ */}
-      <div>
-        <h2 className={`text-xs font-semibold ${txt3} mb-3 px-1 uppercase tracking-wide`}>פעולות מהירות</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { to: '/night-shifts',      Icon: Moon,       iconColor: '#3B82F6', label: 'ניהול\nשיבוצי לילה', border: 'border-blue-100 hover:border-blue-200 hover:bg-blue-50' },
-            { to: '/shabbat',           Icon: Star,       iconColor: '#9333EA', label: 'ניהול\nתורני שבת',   border: 'border-purple-100 hover:border-purple-200 hover:bg-purple-50' },
-            { to: '/branch-management', Icon: UsersThree, iconColor: '#6B7280', label: 'ניהול\nמתנדבים',     border: 'border-gray-100 hover:border-gray-200 hover:bg-gray-50' },
-            { to: '/messages',          Icon: ChatCircle, iconColor: '#6B7280', label: 'שלח הודעה\nלסניף',   border: 'border-gray-100 hover:border-gray-200 hover:bg-gray-50' },
-          ].map(({ to, Icon, iconColor, label, border }) => (
-            <Link
-              key={to}
-              to={to}
-              className={`flex flex-col items-center gap-2 bg-white shadow-sm rounded-2xl p-4 transition text-center border ${border}`}
-            >
-              <Icon size={28} color={iconColor} />
-              <span className={`text-xs font-medium ${txt2} leading-tight whitespace-pre-line`}>{label}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      </>}
 
       {selectedActivity && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
