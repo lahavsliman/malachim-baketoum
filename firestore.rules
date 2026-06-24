@@ -41,8 +41,18 @@ service cloud.firestore {
     function canWriteMessages(branchId) {
       let u = getUserData();
       return isAuth() && u.branchId == branchId
-        && (u.role == 'system_admin' || u.role == 'branch_head'
-            || u.role == 'branch_deputy' || u.role == 'role_holder');
+        && (
+          u.role == 'system_admin' || u.role == 'branch_head' || u.role == 'branch_deputy'
+          || (
+            // role holders: allowed only if they hold a sending role (not dispatcher-only)
+            (u.role == 'role_holder' || u.role == 'volunteer')
+            && u.roleTypes != null
+            && u.roleTypes.hasAny([
+              'night_coordinator', 'shabbat_coordinator', 'transport_coordinator',
+              'car_coordinator', 'ambulance_coordinator', 'cohesion_coordinator', 'events_coordinator'
+            ])
+          )
+        );
     }
 
     // True for branch_head, branch_deputy, or a role_holder with events_coordinator role type.
