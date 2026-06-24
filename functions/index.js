@@ -34,7 +34,7 @@ async function sendNightShiftReminders(dateStr, title, body) {
     try {
       await getMessaging().send({
         token: fcmToken,
-        notification: { title, body: body.replace('{date}', dateStr) },
+        data: { title, body: body.replace('{date}', dateStr) },
         webpush: { headers: { Urgency: 'high' } },
       })
     } catch (err) {

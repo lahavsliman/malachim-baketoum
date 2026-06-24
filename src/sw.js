@@ -20,8 +20,8 @@ const firebaseApp = initializeApp({
 const messaging = getMessaging(firebaseApp)
 
 onBackgroundMessage(messaging, (payload) => {
-  const title = payload.notification?.title || 'מלאכים בכתום'
-  const body  = payload.notification?.body  || ''
+  const title = payload.data?.title || 'מלאכים בכתום'
+  const body  = payload.data?.body  || ''
   self.registration.showNotification(title, {
     body,
     icon:  '/icons/icon-192x192.png',
