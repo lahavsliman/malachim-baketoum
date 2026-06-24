@@ -85,27 +85,6 @@ const getUserRoleBadges = (user) => {
 
 // ── Generic dashboard (branch_head, system_admin, role_holder) ────────────────
 
-const DASH_ICON_COLORS = { orange: '#F97316', blue: '#3B82F6', purple: '#9333EA', green: '#22C55E' }
-
-const DashCard = ({ to, Icon, title, subtitle, color = 'orange' }) => {
-  const colors = {
-    orange: 'border-orange-200 hover:border-orange-300 hover:bg-orange-50',
-    blue:   'border-blue-100   hover:border-blue-200   hover:bg-blue-50',
-    purple: 'border-purple-100 hover:border-purple-200 hover:bg-purple-50',
-    green:  'border-green-100  hover:border-green-200  hover:bg-green-50',
-  }
-  return (
-    <Link
-      to={to}
-      className={`block bg-white border shadow-sm rounded-2xl p-4 transition-all duration-200 ${colors[color]}`}
-    >
-      <div className="mb-2"><Icon size={26} color={DASH_ICON_COLORS[color]} /></div>
-      <h3 className={`font-bold ${txt1}`}>{title}</h3>
-      {subtitle && <p className={`text-sm ${txt2} mt-1`}>{subtitle}</p>}
-    </Link>
-  )
-}
-
 function NavGrid() {
   const navItems = useNavItems()
   const navigate = useNavigate()
@@ -253,20 +232,19 @@ function VolunteerDashboard({ user, branch }) {
       setLoading(true)
       const results = await Promise.allSettled([
         hasNight   ? getMonthShifts(user.branchId, year, month)                       : Promise.resolve([]),
-        hasNight   ? getMonthShifts(user.branchId, year, month)                       : Promise.resolve([]),
         hasShabbat ? getVolunteerMonthShabbatShifts(user.branchId, user.id, monthStr) : Promise.resolve([]),
         getUserNotifications(user.id),
         getBranchSettings(user.branchId),
       ])
-      if (hasNight) {
-        const allSnap = await getMonthShifts(user.branchId, year, month)
+      if (hasNight && results[0].status === 'fulfilled') {
+        const allSnap = results[0].value
         setAllNightShifts(allSnap)
         setMyNightShifts(allSnap.filter(s => s.volunteerId === user.id))
       }
-      if (hasShabbat && results[2].status === 'fulfilled') setMyShabbatShifts(results[2].value)
-      if (results[3].status === 'fulfilled') setNotifications(results[3].value)
-      if (results[4].status === 'fulfilled') {
-        const ns = results[4].value?.nightShifts
+      if (hasShabbat && results[1].status === 'fulfilled') setMyShabbatShifts(results[1].value)
+      if (results[2].status === 'fulfilled') setNotifications(results[2].value)
+      if (results[3].status === 'fulfilled') {
+        const ns = results[3].value?.nightShifts
         setEnableLottery(ns?.enableLottery !== false)
       }
       setLoading(false)
