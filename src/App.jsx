@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { Bell } from '@phosphor-icons/react'
@@ -7,20 +7,20 @@ import Header from './shared/Header'
 import Sidebar from './shared/Sidebar'
 import ProtectedRoute from './shared/ProtectedRoute'
 import LoadingSpinner from './shared/LoadingSpinner'
-import LoginPage from './pages/LoginPage'
-import Dashboard from './pages/Dashboard'
-import BranchManagementPage from './pages/BranchManagementPage'
-import SystemAdminPage from './pages/SystemAdminPage'
-import NightShiftsPage from './modules/night-shifts/NightShiftsPage'
-import ShabbatPage from './modules/shabbat/ShabbatPage'
-import BuildingCodesPage from './modules/building-codes/BuildingCodesPage'
-import MessagesPage from './modules/messages/MessagesPage'
-import NotificationsPage from './modules/notifications/NotificationsPage'
-import EventsPage from './modules/events/EventsPage'
-import TransportPage from './pages/TransportPage'
-import MyTransportPage from './pages/MyTransportPage'
-import ContactsPage from './pages/ContactsPage'
-import ReportsPage from './modules/reports/ReportsPage'
+const LoginPage            = lazy(() => import('./pages/LoginPage'))
+const Dashboard            = lazy(() => import('./pages/Dashboard'))
+const BranchManagementPage = lazy(() => import('./pages/BranchManagementPage'))
+const SystemAdminPage      = lazy(() => import('./pages/SystemAdminPage'))
+const NightShiftsPage      = lazy(() => import('./modules/night-shifts/NightShiftsPage'))
+const ShabbatPage          = lazy(() => import('./modules/shabbat/ShabbatPage'))
+const BuildingCodesPage    = lazy(() => import('./modules/building-codes/BuildingCodesPage'))
+const MessagesPage         = lazy(() => import('./modules/messages/MessagesPage'))
+const NotificationsPage    = lazy(() => import('./modules/notifications/NotificationsPage'))
+const EventsPage           = lazy(() => import('./modules/events/EventsPage'))
+const TransportPage        = lazy(() => import('./pages/TransportPage'))
+const MyTransportPage      = lazy(() => import('./pages/MyTransportPage'))
+const ContactsPage         = lazy(() => import('./pages/ContactsPage'))
+const ReportsPage          = lazy(() => import('./modules/reports/ReportsPage'))
 import InstallPrompt from './shared/InstallPrompt'
 import CriticalMessageGate from './shared/CriticalMessageGate'
 
@@ -87,51 +87,53 @@ function AppLayout() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className="flex-1 overflow-y-auto pb-20 lg:pb-0">
-          <Routes>
+          <Suspense fallback={<div className="flex justify-center items-center py-20"><LoadingSpinner size="lg" text="טוען..." /></div>}>
+            <Routes>
 
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/night-shifts" element={<NightShiftsPage />} />
-            <Route path="/shabbat" element={<ShabbatPage />} />
-            <Route path="/events" element={<EventsPage />} />
-            <Route path="/transport" element={<TransportPage />} />
-            <Route path="/my-transport" element={<MyTransportPage />} />
-            <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/messages" element={<MessagesPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-            <Route
-              path="/building-codes"
-              element={
-                <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy', 'role_holder']}>
-                  <BuildingCodesPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy']}>
-                  <ReportsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/branch-management"
-              element={
-                <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy']}>
-                  <BranchManagementPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/system-admin"
-              element={
-                <ProtectedRoute allowedRoles={['system_admin']}>
-                  <SystemAdminPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/night-shifts" element={<NightShiftsPage />} />
+              <Route path="/shabbat" element={<ShabbatPage />} />
+              <Route path="/events" element={<EventsPage />} />
+              <Route path="/transport" element={<TransportPage />} />
+              <Route path="/my-transport" element={<MyTransportPage />} />
+              <Route path="/contacts" element={<ContactsPage />} />
+              <Route path="/messages" element={<MessagesPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route
+                path="/building-codes"
+                element={
+                  <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy', 'role_holder']}>
+                    <BuildingCodesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy']}>
+                    <ReportsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/branch-management"
+                element={
+                  <ProtectedRoute allowedRoles={['system_admin', 'branch_head', 'branch_deputy']}>
+                    <BranchManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/system-admin"
+                element={
+                  <ProtectedRoute allowedRoles={['system_admin']}>
+                    <SystemAdminPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
       <CriticalMessageGate />
@@ -154,13 +156,15 @@ function AppRouter() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route
-        path="/*"
-        element={user ? <AppLayout /> : <Navigate to="/login" replace />}
-      />
-    </Routes>
+    <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><LoadingSpinner size="lg" text="טוען..." /></div>}>
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+        <Route
+          path="/*"
+          element={user ? <AppLayout /> : <Navigate to="/login" replace />}
+        />
+      </Routes>
+    </Suspense>
   )
 }
 
