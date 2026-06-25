@@ -208,8 +208,8 @@ function VolunteerDashboard({ user, branch }) {
   const daysInMonth = getDaysInMonth(now)
   const daysLeft    = daysInMonth - now.getDate()
 
-  const hasNight   = hasPerm(user, 'nightShifts')
-  const hasShabbat = hasPerm(user, 'shabbatVolunteer')
+  const hasNight   = hasPerm(user, 'nightShifts')        || hasPerm(user, 'canManageNightShifts')  || user?.roleTypes?.includes('night_coordinator')
+  const hasShabbat = hasPerm(user, 'shabbatVolunteer')   || hasPerm(user, 'canManageShabbat')      || user?.roleTypes?.includes('shabbat_coordinator')
 
   const showShabbatBanner = hasShabbat && (isThursday(now) || isFriday(now))
 
@@ -460,14 +460,14 @@ function VolunteerDashboard({ user, branch }) {
                   disabled={shabbatSubmitting}
                   className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-2"
                 >
-                  {shabbatSubmitting ? '...' : <>✅ כן, זמין</>}
+                  {shabbatSubmitting ? '...' : 'כן, זמין'}
                 </button>
                 <button
                   onClick={() => handleShabbatResponse(false)}
                   disabled={shabbatSubmitting}
                   className="flex-1 bg-white hover:bg-gray-50 disabled:opacity-50 text-gray-700 font-bold py-2.5 rounded-xl transition border border-gray-200"
                 >
-                  ❌ לא זמין
+                  לא זמין
                 </button>
               </div>
             </div>
@@ -959,5 +959,5 @@ export default function Dashboard() {
   if (user.role === 'branch_head' || user.role === 'branch_deputy')
     return <BranchHeadDashboard user={user} branch={branch} />
 
-  return <GenericDashboard user={user} branch={branch} />
+  return <VolunteerDashboard user={user} branch={branch} />
 }

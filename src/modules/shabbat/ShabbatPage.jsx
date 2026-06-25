@@ -14,14 +14,13 @@ import {
   getShabbatHistory,
   publishSchedule,
   subscribeShabbatAvailability,
-  confirmVolunteer,
 } from '../../firebase/shabbatShifts'
 import AvailabilityForm from './AvailabilityForm'
-import AreaPanel from './AreaPanel'
+import AreaPanel, { UnassignedPanel } from './AreaPanel'
 import LoadingSpinner from '../../shared/LoadingSpinner'
 import BranchSelector from '../../shared/BranchSelector'
 import Toast from '../../shared/Toast'
-import { Star, ClipboardText, Lock, Globe, WhatsappLogo, Sparkle, ArrowCounterClockwise, MegaphoneSimple } from '@phosphor-icons/react'
+import { Star, ClipboardText, Lock, Globe, WhatsappLogo, ArrowCounterClockwise, MegaphoneSimple } from '@phosphor-icons/react'
 import { HDate, HebrewCalendar, flags } from '@hebcal/core'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -103,8 +102,42 @@ export default function ShabbatPage() {
   const unsubRef = useRef(null)
 
   const shabbatDate = format(currentFriday, 'yyyy-MM-dd')
-  const shabbatLabel = format(currentFriday, 'EEEE, d בMMMM yyyy', { locale: he })
+  const shabbatLabel = format(currentFriday, 'd בMMMM yyyy', { locale: he })
   const monthStr = format(currentFriday, 'yyyy-MM')
+  const parshaName = getParshaName(shabbatDate)
+  const hebrewDateShort = (() => {
+    try {
+      const saturday = new Date(shabbatDate + 'T12:00:00')
+      saturday.setDate(saturday.getDate() + 1)
+      const hdate = new HDate(saturday)
+
+      const MONTHS_HE = ['ניסן','אייר','סיוון','תמוז','אב','אלול','תשרי','חשוון','כסלו','טבת','שבט','אדר','אדר א׳','אדר ב׳']
+      const monthName = MONTHS_HE[(hdate.getMonth() - 1 + 14) % 14] ?? ''
+
+      const toGematria = (n) => {
+        const hundreds = ['','ק','ר','ש','ת','תק','תר','תש','תת','תתק']
+        const tens     = ['','י','כ','ל','מ','נ','ס','ע','פ','צ']
+        const ones     = ['','א','ב','ג','ד','ה','ו','ז','ח','ט']
+        let h = Math.floor(n / 100), t = Math.floor((n % 100) / 10), o = n % 10
+        let s = hundreds[h]
+        if (t === 1 && o === 5) { s += 'טו'; t = 0; o = 0 }
+        else if (t === 1 && o === 6) { s += 'טז'; t = 0; o = 0 }
+        else { s += tens[t] + ones[o] }
+        if (s.length === 1) return s + "'"
+        return s.slice(0, -1) + '"' + s.slice(-1)
+      }
+
+      const dayGem  = toGematria(hdate.getDate())
+      const yearGem = toGematria(hdate.getFullYear() - 5000)
+
+      const greg = new Date(shabbatDate + 'T12:00:00')
+      const dd = String(greg.getDate()).padStart(2, '0')
+      const mm = String(greg.getMonth() + 1).padStart(2, '0')
+      const yy = String(greg.getFullYear()).slice(2)
+
+      return `${dayGem} ${monthName} ${yearGem} | ${dd}/${mm}/${yy}`
+    } catch { return '' }
+  })()
 
   const showToast = (type, msg) => {
     setToast({ type, msg })
@@ -202,29 +235,6 @@ export default function ShabbatPage() {
   const confirmedCount = shifts.filter(s => s.status === 'confirmed').length
   const pendingCount   = shifts.filter(s => s.status === 'available').length
   const cancelledCount = shifts.filter(s => s.status === 'cancelled').length
-
-  const handleAutoSuggest = async (areaName) => {
-    const areaConfig = areas.find(a => a.name === areaName)
-    const required = areaConfig?.required ?? 1
-    const available = shifts
-      .filter(s => s.area === areaName && s.status === 'available')
-      .sort((a, b) => (monthShiftCounts[a.volunteerId] ?? 0) - (monthShiftCounts[b.volunteerId] ?? 0))
-    const toConfirm = available.slice(0, required)
-    if (!toConfirm.length) { showToast('error', 'אין מתנדבים זמינים לאזור זה'); return }
-    await Promise.all(toConfirm.map(s => confirmVolunteer(s.id, user?.id)))
-    showToast('success', `אושרו ${toConfirm.length} מתנדבים לאזור ${areaName}`)
-  }
-
-  const handleAutoSuggestAll = async () => {
-    for (const area of areas) {
-      const available = shifts
-        .filter(s => s.area === area.name && s.status === 'available')
-        .sort((a, b) => (monthShiftCounts[a.volunteerId] ?? 0) - (monthShiftCounts[b.volunteerId] ?? 0))
-      const toConfirm = available.slice(0, area.required)
-      await Promise.all(toConfirm.map(s => confirmVolunteer(s.id, user?.id)))
-    }
-    showToast('success', 'הצעה אוטומטית הוחלה על כל האזורים')
-  }
 
   const handlePublish = async () => {
     const confirmedShifts = shifts.filter(s => s.status === 'confirmed')
@@ -357,7 +367,10 @@ export default function ShabbatPage() {
                 </button>
 
                 <div className="text-center flex-1 min-w-0">
-                  <h2 className="text-xl font-black text-gray-900 leading-tight">{shabbatLabel}</h2>
+                  <h2 className="text-xl font-black text-gray-900 leading-tight">{parshaName ? parshaName : `שבת ${shabbatLabel}`}</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {hebrewDateShort || shabbatLabel}
+                  </p>
                   <div className="flex items-center justify-center mt-2.5">
                     {isPublished ? (
                       <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 bg-green-50 border border-green-200 px-3 py-1 rounded-full">
@@ -381,7 +394,11 @@ export default function ShabbatPage() {
               </div>
             ) : (
               <div className="text-center">
-                <h2 className="text-xl font-black text-gray-900">שבת {shabbatLabel}</h2>
+                <h2 className="text-xl font-black text-gray-900">{parshaName ? parshaName : `שבת ${shabbatLabel}`}</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {hebrewDateShort && <span>{hebrewDateShort} · </span>}
+                  {shabbatLabel}
+                </p>
                 {isPublished && (
                   <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 bg-green-50 border border-green-200 px-3 py-1 rounded-full mt-2.5">
                     ✓ פורסם
@@ -478,29 +495,27 @@ export default function ShabbatPage() {
                       <p className="text-gray-400 text-sm mt-1.5">הוסף אזורים בדף ניהול הסניף.</p>
                     </div>
                   ) : (
-                    <AreaPanel
-                      areas={areas}
-                      shabbatDate={shabbatDate}
-                      shifts={shifts}
-                      coordinatorId={user?.id}
-                      monthShiftCounts={monthShiftCounts}
-                      onRefresh={refreshData}
-                      onAutoSuggest={handleAutoSuggest}
-                      allVolunteers={allShabbatVols}
-                    />
+                    <>
+                      <AreaPanel
+                        areas={areas}
+                        shabbatDate={shabbatDate}
+                        shifts={shifts}
+                        coordinatorId={user?.id}
+                        monthShiftCounts={monthShiftCounts}
+                        onRefresh={refreshData}
+                        allVolunteers={allShabbatVols}
+                      />
+                      <UnassignedPanel
+                        shifts={shifts}
+                        allVolunteers={allShabbatVols}
+                        coordinatorId={user?.id}
+                        onRefresh={refreshData}
+                      />
+                    </>
                   )}
 
                   {/* Action buttons */}
                   <div className="space-y-3">
-                    {pendingCount > 0 && (
-                      <button
-                        onClick={handleAutoSuggestAll}
-                        className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl text-sm font-medium transition border border-gray-200 shadow-sm"
-                      >
-                        <Sparkle size={15} /> הצעה אוטומטית לכל האזורים
-                      </button>
-                    )}
-
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setShowPublishConfirm(true)}

@@ -29,6 +29,23 @@ export const getVolunteerMonthShabbatShifts = async (branchId, volunteerId, mont
 }
 
 export const submitShabbatAvailability = async (branchId, shabbatDate, volunteerId, volunteerName, area) => {
+  const q = query(
+    collection(db, 'shabbat_shifts'),
+    where('branchId', '==', branchId),
+    where('shabbatDate', '==', shabbatDate),
+    where('volunteerId', '==', volunteerId)
+  )
+  const snap = await getDocs(q)
+  if (!snap.empty) {
+    await updateDoc(snap.docs[0].ref, {
+      volunteerName, area,
+      status: 'available',
+      submittedAt: Timestamp.now(),
+      confirmedAt: null,
+      confirmedBy: null,
+    })
+    return
+  }
   return addDoc(collection(db, 'shabbat_shifts'), {
     branchId,
     shabbatDate,
@@ -71,6 +88,23 @@ export const submitAvailability = submitShabbatAvailability
 
 // Submit "not available" — records explicit unavailability
 export const submitUnavailability = async (branchId, shabbatDate, volunteerId, volunteerName, area) => {
+  const q = query(
+    collection(db, 'shabbat_shifts'),
+    where('branchId', '==', branchId),
+    where('shabbatDate', '==', shabbatDate),
+    where('volunteerId', '==', volunteerId)
+  )
+  const snap = await getDocs(q)
+  if (!snap.empty) {
+    await updateDoc(snap.docs[0].ref, {
+      volunteerName, area,
+      status: 'not_available',
+      submittedAt: Timestamp.now(),
+      confirmedAt: null,
+      confirmedBy: null,
+    })
+    return
+  }
   return addDoc(collection(db, 'shabbat_shifts'), {
     branchId,
     shabbatDate,

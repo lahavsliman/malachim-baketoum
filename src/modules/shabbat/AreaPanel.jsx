@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { confirmVolunteer, rejectVolunteer, adminAddConfirmedVolunteer } from '../../firebase/shabbatShifts'
 
+const UNASSIGNED = (a) => !a || a.trim() === '' || a.trim() === 'לא הוגדר'
+
 // ── Status chip styles — light theme ──────────────────────────────────────────
 const STATUS_CHIP = {
   available:     { label: 'ממתין',   cls: 'bg-amber-50  text-amber-700  border-amber-200'  },
@@ -16,7 +18,6 @@ export default function AreaPanel({
   coordinatorId,
   monthShiftCounts,    // {volunteerId: confirmedCount} for current month
   onRefresh,
-  onAutoSuggest,       // callback(areaName) → auto-suggests for that area
   allVolunteers = [],  // all branch shabbat volunteers for manual-add
 }) {
   const [addSelections, setAddSelections] = useState({}) // { areaName: volId }
@@ -53,7 +54,7 @@ export default function AreaPanel({
 
   // Collect areas: configured + any submitted-but-unconfigured extras
   const configuredNames = new Set(areas.map(a => a.name))
-  const extraAreas = [...new Set(shifts.map(s => s.area).filter(a => a && !configuredNames.has(a)))]
+  const extraAreas = [...new Set(shifts.map(s => s.area).filter(a => !UNASSIGNED(a) && !configuredNames.has(a)))]
   const allAreas = [
     ...areas,
     ...extraAreas.map(name => ({ name, required: 1 })),
@@ -102,16 +103,6 @@ export default function AreaPanel({
                   <span className={`text-sm font-bold px-3 py-1.5 rounded-full border ${progressPill}`}>
                     {confirmed}/{required} מאושרים
                   </span>
-
-                  {/* Auto-suggest for this area */}
-                  {available > 0 && onAutoSuggest && confirmed < required && (
-                    <button
-                      onClick={() => onAutoSuggest(area)}
-                      className="text-xs font-medium bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 hover:border-orange-300 px-3 py-1.5 rounded-xl transition"
-                    >
-                      הצע אוטומטית
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -237,6 +228,68 @@ export default function AreaPanel({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+export function UnassignedPanel({ shifts, allVolunteers, coordinatorId, onRefresh }) {
+  const unassigned = shifts.filter(s => UNASSIGNED(s.area))
+  if (unassigned.length === 0) return null
+
+  const handleConfirm = async (shiftId) => {
+    await confirmVolunteer(shiftId, coordinatorId)
+    onRefresh()
+  }
+  const handleReject = async (shiftId) => {
+    await rejectVolunteer(shiftId, coordinatorId)
+    onRefresh()
+  }
+
+  return (
+    <div className="bg-white border border-red-200 shadow-sm rounded-2xl overflow-hidden">
+      <div className="h-1.5 bg-red-400" />
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h4 className="text-lg font-black text-gray-900">ללא צוות מוגדר</h4>
+            <p className="text-xs text-gray-400 mt-0.5">תורנים שנרשמו ללא אזור — יש להקצות אותם ידנית</p>
+          </div>
+          <span className="text-sm font-bold px-3 py-1.5 rounded-full border bg-red-50 text-red-600 border-red-200">
+            {unassigned.filter(s => s.status === 'available').length} ממתינים
+          </span>
+        </div>
+        <div className="space-y-2">
+          {unassigned.filter(s => s.status !== 'not_available').map(shift => {
+            const chip = STATUS_CHIP[shift.status] || STATUS_CHIP.available
+            const volCode = allVolunteers.find(v => v.id === shift.volunteerId)?.volunteerId
+            return (
+              <div key={shift.id} className="flex items-center justify-between px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-900 text-sm truncate">{shift.volunteerName}</span>
+                    {volCode && (
+                      <span className="text-xs font-mono text-gray-400 bg-white border border-gray-200 px-1.5 py-0.5 rounded-md shrink-0">{volCode}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-red-400 mt-0.5">לא שויך לצוות</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 mr-3">
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${chip.cls}`}>{chip.label}</span>
+                  {shift.status === 'available' && (
+                    <>
+                      <button onClick={() => handleConfirm(shift.id)} className="text-xs font-semibold bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-xl transition">אשר</button>
+                      <button onClick={() => handleReject(shift.id)} className="text-xs font-semibold bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 px-3 py-1.5 rounded-xl transition">דחה</button>
+                    </>
+                  )}
+                  {shift.status === 'confirmed' && (
+                    <button onClick={() => handleReject(shift.id)} className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-200 px-3 py-1.5 rounded-xl transition">בטל</button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
