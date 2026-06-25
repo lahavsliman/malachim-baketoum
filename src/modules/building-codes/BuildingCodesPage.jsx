@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import * as XLSX from 'xlsx'
 import { useAuth } from '../../context/AuthContext'
 import { useRole } from '../../hooks/useRole'
 import { getBranchSettings } from '../../firebase/branches'
@@ -81,18 +80,6 @@ export default function BuildingCodesPage() {
     else { setSortBy(field); setSortDir('asc') }
   }
 
-  const exportExcel = () => {
-    const data = filteredCodes.map(c => ({
-      עיר: c.city, רחוב: c.street, 'מספר בניין': c.buildingNumber,
-      כניסה: c.entrance || '', קוד: c.code, הערות: c.notes || '',
-      'עדכון אחרון': c.updatedByName || '',
-    }))
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'קודי בניין')
-    XLSX.writeFile(wb, `building-codes-${branchId}.xlsx`)
-  }
-
   // ── Add / Edit modal ──────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false)
   const [editCode, setEditCode] = useState(null)
@@ -163,14 +150,6 @@ export default function BuildingCodesPage() {
                 </button>
               ))}
             </div>
-            {(isBranchHead || isSystemAdmin) && (
-              <button
-                onClick={exportExcel}
-                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm border border-gray-200 transition"
-              >
-                📊 Excel
-              </button>
-            )}
           </div>
 
           {/* Result count */}

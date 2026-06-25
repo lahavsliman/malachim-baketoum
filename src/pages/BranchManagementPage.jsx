@@ -1366,6 +1366,11 @@ export default function BranchManagementPage() {
       {/* ══════════════════════════════ TAB 5: BUILDING CODES IMPORT ══════════════════════════════ */}
       {activeTab === 5 && (
         <div className="space-y-5 max-w-2xl">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 text-sm text-gray-600 leading-relaxed">
+            <p className="font-bold text-gray-800 mb-1.5">ייבוא קודי בניין מקובץ</p>
+            <p className="mb-2">אם ברשותכם קובץ Excel או CSV עם קודי בניין, ניתן להעלות אותו כאן וכל הקודים ייווספו למערכת בבת אחת.</p>
+            <p className="text-gray-500">שימו לב: אם בקובץ קיימת כתובת שכבר נמצאת במערכת (אותה עיר, רחוב, מספר בית וכניסה), היא תדולג אוטומטית ולא תיווצר כפילות. בתצוגה המקדימה תראו לצד כל שורה אם היא נוספה או דולגה.</p>
+          </div>
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
             <p className="font-medium mb-1">עמודות נדרשות בקובץ:</p>
             <p className="font-mono text-xs text-blue-600">{CODES_COLS.join(', ')}</p>
@@ -1447,6 +1452,9 @@ export default function BranchManagementPage() {
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <UsersFour size={16} className="text-orange-400" /> צוותים פעילים
                 </h3>
+                <p className="text-sm text-gray-500 leading-relaxed mb-4 bg-gray-50 border border-gray-100 rounded-xl p-3">
+                  במידה ובסניפכם יש חלוקה לצוותים, יש ליצור כאן את שמות הצוותים שלכם, ולאחר מכן ניתן לבחור לכל מתנדב את הצוות אליו הוא משתייך במסך עריכת המתנדבים.
+                </p>
                 {(settings.teams || []).length === 0 ? (
                   <p className="text-gray-500 text-sm text-center py-6">אין צוותים מוגדרים — הוסף צוות ראשון</p>
                 ) : (
