@@ -4,7 +4,7 @@ import {
   submitUnavailability,
   setVolunteerShiftStatus,
 } from '../../firebase/shabbatShifts'
-import { Lock, Fire, ArrowCounterClockwise, CheckCircle, XCircle } from '@phosphor-icons/react'
+import { Lock, ArrowCounterClockwise, CheckCircle, XCircle } from '@phosphor-icons/react'
 
 const STATUS_LABELS = {
   available: { icon: '⏳', text: 'ממתין לאישור', color: 'text-yellow-300' },
@@ -116,8 +116,7 @@ export default function AvailabilityForm({
     return (
       <div className="bg-white border border-gray-200 rounded-2xl p-6">
         <div className="text-center mb-4">
-          <Fire size={48} weight="fill" className="text-orange-400 mx-auto" />
-          <h3 className="font-bold text-gray-800 text-lg mt-3">שבת {shabbatLabel}</h3>
+          <h3 className="font-bold text-gray-800 text-lg">שבת {shabbatLabel}</h3>
         </div>
 
         <div className={`flex items-center justify-center gap-2 text-lg font-bold mb-4 ${label.color}`}>
@@ -163,8 +162,7 @@ export default function AvailabilityForm({
     <div className="bg-white border border-gray-200 rounded-2xl p-6">
       {/* Header */}
       <div className="text-center mb-6">
-        <Fire size={48} weight="fill" className="text-orange-400 mx-auto" />
-        <h3 className="font-bold text-gray-800 text-xl mt-3">
+        <h3 className="font-bold text-gray-800 text-xl">
           האם אתה זמין לתורנות השבת הקרובה?
         </h3>
         <p className="text-orange-400 font-bold text-lg mt-2">{shabbatLabel}</p>
