@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler')
+const { onDocumentCreated } = require('firebase-functions/v2/firestore')
 const { initializeApp } = require('firebase-admin/app')
 const { getFirestore } = require('firebase-admin/firestore')
 const { getMessaging } = require('firebase-admin/messaging')
@@ -141,3 +142,32 @@ exports.nightShiftReminderMorning = onSchedule(
     )
   }
 )
+
+// ── Branch message push notification — fires on every new branch_messages doc ─
+exports.sendMessagePushNotification = onDocumentCreated('branch_messages/{messageId}', async (event) => {
+  const data = event.data?.data()
+  if (!data) return
+
+  const { title, body, targetUserIds } = data
+  if (!Array.isArray(targetUserIds) || targetUserIds.length === 0) return
+
+  const sends = targetUserIds.map(async (userId) => {
+    const userSnap = await db.collection('users').doc(userId).get()
+    if (!userSnap.exists) return
+    const { fcmToken } = userSnap.data()
+    if (!fcmToken) return
+
+    try {
+      await getMessaging().send({
+        token: fcmToken,
+        data: { title, body },
+        webpush: { headers: { Urgency: 'high' } },
+      })
+    } catch (err) {
+      console.error(`[FCM] Push failed for user ${userId}:`, err.message)
+    }
+  })
+
+  await Promise.all(sends)
+  console.log(`[sendMessagePushNotification] Sent push to ${targetUserIds.length} users for message ${event.params.messageId}`)
+})

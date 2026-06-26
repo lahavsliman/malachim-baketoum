@@ -61,22 +61,31 @@ export default function MyTransportPage() {
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto pb-20 lg:pb-0" dir="rtl">
       {/* Header */}
-      <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2 mb-6">
+      <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2 mb-4">
         <Car size={24} color="#F97316" weight="fill" /> התחבורה שלי
       </h1>
 
+      {/* Explanation card */}
+      <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 mb-5 text-sm text-orange-900 space-y-1">
+        <p className="font-semibold">המסך מציג את הרישומים האישיים שלך בתחבורה.</p>
+        <p>• <span className="font-medium">משמרת</span> — משמרת מלאה</p>
+        <p>• <span className="font-medium">כונן</span> — כוננות על הרכב ללא אנשי צוות נוספים</p>
+      </div>
+
       {/* Date range filter */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 flex flex-wrap gap-3 items-end">
-        <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium">
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5">
+        <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium mb-3">
           <CalendarIcon size={16} /> טווח תאריכים
         </div>
-        <div>
-          <label className={lbl}>מתאריך</label>
-          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inp} />
-        </div>
-        <div>
-          <label className={lbl}>עד תאריך</label>
-          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inp} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={lbl}>מתאריך</label>
+            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inp} />
+          </div>
+          <div>
+            <label className={lbl}>עד תאריך</label>
+            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inp} />
+          </div>
         </div>
       </div>
 

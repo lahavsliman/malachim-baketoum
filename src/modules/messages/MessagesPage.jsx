@@ -12,7 +12,7 @@ import BranchSelector from '../../shared/BranchSelector'
 import {
   MegaphoneSimple, Megaphone, Moon, Star, UsersThree, Globe,
   Car, Ambulance, Truck, EnvelopeSimple, GenderMale, GenderFemale, CheckCircle,
-  Trash, X, BellRinging,
+  Trash, X, BellRinging, CaretDown,
 } from '@phosphor-icons/react'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ const TARGET_OPTIONS = [
 // Phosphor component version for use in JSX spans/divs
 function GroupIconComp({ group, size = 20 }) {
   const cls = 'text-gray-400 shrink-0'
-  if (typeof group === 'string' && group.startsWith('team:')) {
+  if (typeof group === 'string' && (group.includes(',') || group.startsWith('team:'))) {
     return <UsersThree size={size} className={cls} />
   }
   switch (group) {
@@ -85,14 +85,32 @@ function formatTs(ts) {
   } catch { return '' }
 }
 
+function getTargetLabel(targetGroup) {
+  if (!targetGroup) return 'כל המתנדבים'
+  if (targetGroup.includes(',')) {
+    return targetGroup.split(',').map(g => {
+      const opt = TARGET_OPTIONS.find(o => o.value === g)
+      if (opt) return opt.label
+      if (g.startsWith('team:')) return `צוות ${g.slice(5)}`
+      return g
+    }).join(' + ')
+  }
+  if (targetGroup.startsWith('team:')) return `צוות ${targetGroup.slice(5)}`
+  return TARGET_OPTIONS.find(o => o.value === targetGroup)?.label ?? 'כל המתנדבים'
+}
+
 // ── Send form (inline) ────────────────────────────────────────────────────────
 
 function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel }) {
-  const [title,       setTitle]       = useState('')
-  const [body,        setBody]        = useState('')
-  const [targetGroup, setTargetGroup] = useState(
+  const [title,        setTitle]        = useState('')
+  const [body,         setBody]         = useState('')
+  const [selectedGroups, setSelectedGroups] = useState([
     allowedAudiences === 'ALL' ? 'all' : (Array.isArray(allowedAudiences) && allowedAudiences[0]) || 'all'
-  )
+  ])
+  const [audienceOpen, setAudienceOpen] = useState(false)
+  const [teamOpen,     setTeamOpen]     = useState(false)
+  const audienceRef = useRef(null)
+  const teamRef     = useRef(null)
   const [sending,     setSending]     = useState(false)
   const [error,       setError]       = useState('')
   const [teams,       setTeams]       = useState([])
@@ -111,6 +129,23 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
       .catch(() => {})
   }, [branchId])
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (audienceRef.current && !audienceRef.current.contains(e.target)) setAudienceOpen(false)
+      if (teamRef.current && !teamRef.current.contains(e.target)) setTeamOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const toggleGroup = (value) => {
+    setSelectedGroups(prev =>
+      prev.includes(value)
+        ? prev.length === 1 ? prev : prev.filter(g => g !== value)
+        : [...prev, value]
+    )
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
     if (!title.trim() || !body.trim()) {
@@ -122,9 +157,15 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
     try {
       const senderName = `${user.firstName} ${user.lastName}`
 
-      // 1. Resolve target users
-      const targets    = await getTargetUsers(branchId, targetGroup)
-      const targetIds  = targets.map(u => u.id)
+      // 1. Resolve target users across all selected groups, deduplicate by id
+      const allResults = await Promise.all(selectedGroups.map(g => getTargetUsers(branchId, g)))
+      const seen = new Set()
+      const targets = allResults.flat().filter(u => {
+        if (seen.has(u.id)) return false
+        seen.add(u.id)
+        return true
+      })
+      const targetIds = targets.map(u => u.id)
 
       // 2. Resolve choice options if this is a choice message
       let choiceOptions = []
@@ -140,8 +181,9 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
       }
 
       // 3. Save message — capture the new doc ID to link notifications
+      const targetGroupStr = selectedGroups.length === 1 ? selectedGroups[0] : selectedGroups.join(',')
       const msgRef = await sendBranchMessage(
-        branchId, user.id, senderName, title.trim(), body.trim(), targetGroup, targetIds,
+        branchId, user.id, senderName, title.trim(), body.trim(), targetGroupStr, targetIds,
         { requiresAck, messageType, choiceOptions }
       )
 
@@ -157,11 +199,11 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
   }
 
   const fullAccess = allowedAudiences === 'ALL'
-  const allTargetOptions = [
-    ...TARGET_OPTIONS.filter(o => fullAccess || (Array.isArray(allowedAudiences) && allowedAudiences.includes(o.value))),
-    ...(fullAccess ? teams.map(t => ({ value: `team:${t}`, label: `צוות ${t}`, Icon: UsersThree })) : []),
-  ]
-  const selectedOption = allTargetOptions.find(o => o.value === targetGroup)
+  const availableAudienceOptions = TARGET_OPTIONS.filter(o =>
+    fullAccess || (Array.isArray(allowedAudiences) && allowedAudiences.includes(o.value))
+  )
+  const audienceSelected = selectedGroups.filter(g => !g.startsWith('team:'))
+  const teamSelected = selectedGroups.filter(g => g.startsWith('team:'))
 
   return (
     <form
@@ -199,31 +241,101 @@ function SendMessageForm({ user, branchId, allowedAudiences, onSent, onCancel })
         />
       </div>
 
-      {/* Target group */}
+      {/* Target group — multi-select dropdown + team picker */}
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1.5">קהל יעד</label>
-        <div className="grid grid-cols-2 gap-2">
-          {allTargetOptions.map(o => {
-            const active = targetGroup === o.value
-            const Ic = o.Icon
-            return (
+        <div className="flex gap-2">
+          {/* Audience multi-select dropdown */}
+          <div className="flex-1 relative" ref={audienceRef}>
+            <button
+              type="button"
+              onClick={() => { setAudienceOpen(o => !o); setTeamOpen(false) }}
+              className="w-full flex items-center justify-between gap-2 bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 hover:border-orange-400 focus:outline-none transition"
+            >
+              <span className="flex-1 truncate text-right">
+                {audienceSelected.length === 0
+                  ? 'בחר קהל יעד'
+                  : audienceSelected.map(g => TARGET_OPTIONS.find(o => o.value === g)?.label ?? g).join(' + ')}
+              </span>
+              <CaretDown size={14} className={`text-gray-400 shrink-0 transition-transform ${audienceOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {audienceOpen && (
+              <div className="absolute top-full mt-1 right-0 left-0 z-20 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {availableAudienceOptions.map(o => {
+                  const Ic = o.Icon
+                  const checked = selectedGroups.includes(o.value)
+                  return (
+                    <label
+                      key={o.value}
+                      className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-orange-50 transition ${checked ? 'bg-orange-50/50' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleGroup(o.value)}
+                        className="w-4 h-4 accent-orange-500 shrink-0"
+                      />
+                      {Ic && <Ic size={16} className={checked ? 'text-orange-500' : 'text-gray-400'} />}
+                      <span className={`text-sm flex-1 ${checked ? 'text-orange-700 font-medium' : 'text-gray-700'}`}>{o.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {/* Teams button */}
+          {fullAccess && teams.length > 0 && (
+            <div className="relative" ref={teamRef}>
               <button
-                key={o.value}
                 type="button"
-                onClick={() => setTargetGroup(o.value)}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition text-right
-                  ${active
+                onClick={() => { setTeamOpen(o => !o); setAudienceOpen(false) }}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition whitespace-nowrap ${
+                  teamSelected.length > 0
                     ? 'bg-orange-50 border-orange-300 text-orange-700'
-                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
               >
-                {Ic && <Ic size={18} className={active ? 'text-orange-500' : 'text-gray-400'} weight={active ? 'fill' : 'regular'} />}
-                <span className="flex-1">{o.label}</span>
+                <UsersThree size={16} className={teamSelected.length > 0 ? 'text-orange-500' : 'text-gray-400'} />
+                <span>שלח לפי צוות</span>
+                {teamSelected.length > 0 && (
+                  <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                    {teamSelected.length}
+                  </span>
+                )}
               </button>
-            )
-          })}
+              {teamOpen && (
+                <div className="absolute top-full mt-1 right-0 z-20 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden min-w-[160px]">
+                  {teams.map(t => {
+                    const val = `team:${t}`
+                    const checked = selectedGroups.includes(val)
+                    return (
+                      <label
+                        key={t}
+                        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-orange-50 transition ${checked ? 'bg-orange-50/50' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleGroup(val)}
+                          className="w-4 h-4 accent-orange-500 shrink-0"
+                        />
+                        <UsersThree size={14} className={checked ? 'text-orange-500' : 'text-gray-400'} />
+                        <span className={`text-sm ${checked ? 'text-orange-700 font-medium' : 'text-gray-700'}`}>{t}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          ההודעה תישלח ל{selectedOption?.label}
+          ההודעה תישלח ל{selectedGroups.map(g => {
+            const opt = TARGET_OPTIONS.find(o => o.value === g)
+            if (opt) return opt.label
+            if (g.startsWith('team:')) return `צוות ${g.slice(5)}`
+            return g
+          }).join(' + ')}
         </p>
       </div>
 
@@ -381,10 +493,7 @@ function MessageCard({ msg, onOpen, canDelete, onDelete, onTrack }) {
           <div className="mt-3">
             <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200">
               <GroupIconComp group={msg.targetGroup} size={12} />
-              {TARGET_OPTIONS.find(o => o.value === msg.targetGroup)?.label
-                ?? (msg.targetGroup?.startsWith('team:')
-                    ? `צוות ${msg.targetGroup.slice(5)}`
-                    : 'כל המתנדבים')}
+              {getTargetLabel(msg.targetGroup)}
             </span>
           </div>
         </div>
@@ -422,10 +531,7 @@ function MessageCard({ msg, onOpen, canDelete, onDelete, onTrack }) {
 // ── Message modal ─────────────────────────────────────────────────────────────
 
 function MessageModal({ msg, user, onClose }) {
-  const tgLabel = TARGET_OPTIONS.find(o => o.value === msg.targetGroup)?.label
-    ?? (msg.targetGroup?.startsWith('team:')
-        ? `צוות ${msg.targetGroup.slice(5)}`
-        : 'כל המתנדבים')
+  const tgLabel = getTargetLabel(msg.targetGroup)
 
   const [receipt,    setReceipt]    = useState(null)
   const [submitting, setSubmitting] = useState(false)

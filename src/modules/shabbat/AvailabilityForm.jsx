@@ -4,7 +4,12 @@ import {
   submitUnavailability,
   setVolunteerShiftStatus,
 } from '../../firebase/shabbatShifts'
-import { Lock, ArrowCounterClockwise, CheckCircle, XCircle } from '@phosphor-icons/react'
+import { Lock, ArrowCounterClockwise, CheckCircle, XCircle, Star } from '@phosphor-icons/react'
+
+const DAY_NAMES = {
+  sunday: 'ראשון', monday: 'שני', tuesday: 'שלישי',
+  wednesday: 'רביעי', thursday: 'חמישי', friday: 'שישי',
+}
 
 const STATUS_LABELS = {
   available: { icon: '⏳', text: 'ממתין לאישור', color: 'text-yellow-300' },
@@ -42,6 +47,20 @@ export default function AvailabilityForm({
       closingDate.setHours(h, m, 0, 0)
       return new Date() > closingDate
     } catch { return false }
+  })()
+
+  const isWindowOpen = (() => {
+    if (!branchSettings) return true
+    try {
+      const DAY_OFFSET = { sunday: -6, monday: -5, tuesday: -4, wednesday: -3, thursday: -2, friday: -1 }
+      const [h, m] = (branchSettings.openingTime || '08:00').split(':').map(Number)
+      const friday = new Date(shabbatDate + 'T12:00:00')
+      const offset = DAY_OFFSET[branchSettings.openingDay || 'thursday'] ?? -2
+      const openingDate = new Date(friday)
+      openingDate.setDate(openingDate.getDate() + offset)
+      openingDate.setHours(h, m, 0, 0)
+      return new Date() >= openingDate
+    } catch { return true }
   })()
 
   const myResponse = shifts?.find(s => s.volunteerId === user?.id) ?? null
@@ -157,6 +176,18 @@ export default function AvailabilityForm({
   }
 
   // ── Submission form ───────────────────────────────────────────────────────
+
+  if (!isWindowOpen) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center">
+        <Star size={36} className="mx-auto mb-4 text-purple-300" weight="fill" />
+        <h3 className="font-bold text-gray-800 text-lg">הרישום לשבת זו טרם נפתח</h3>
+        <p className="text-gray-500 text-sm mt-2">
+          הרישום יפתח ב{DAY_NAMES[branchSettings?.openingDay || 'thursday']} בשעה {branchSettings?.openingTime || '08:00'}
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-6">

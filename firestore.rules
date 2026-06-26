@@ -316,6 +316,7 @@ service cloud.firestore {
       );
       allow update, delete: if isAuth() && (
         isSystemAdmin()
+        || isBranchHead(resource.data.branchId)
         || (request.auth.uid == resource.data.senderId
             && isBranchMember(resource.data.branchId))
       );

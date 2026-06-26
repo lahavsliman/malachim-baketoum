@@ -49,6 +49,8 @@ const DEFAULT_SETTINGS = {
   shabbat: {
     areas: [],
     maxPerMonth: 2,
+    openingDay: 'thursday',
+    openingTime: '08:00',
     closingDay: 'thursday',
     closingTime: '12:00',
   },
@@ -1240,6 +1242,22 @@ export default function BranchManagementPage() {
                     <label className={lbl}>מקסימום שיבוצים לחודש</label>
                     <input type="number" min={1} value={settings.shabbat.maxPerMonth}
                       onChange={e => setSh('maxPerMonth', Number(e.target.value))} className={inp} />
+                  </div>
+                  {/* Opening time */}
+                  <div>
+                    <label className={lbl}>יום פתיחת הרישום</label>
+                    <select value={settings.shabbat.openingDay ?? 'thursday'} onChange={e => setSh('openingDay', e.target.value)} className={inp}>
+                      <option value="sunday">ראשון</option>
+                      <option value="monday">שני</option>
+                      <option value="tuesday">שלישי</option>
+                      <option value="wednesday">רביעי</option>
+                      <option value="thursday">חמישי</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl}>שעת פתיחת הרישום</label>
+                    <input type="time" value={settings.shabbat.openingTime ?? '08:00'}
+                      onChange={e => setSh('openingTime', e.target.value)} className={inp} />
                   </div>
                   <div>
                     <label className={lbl}>יום סגירת הרשמה</label>
