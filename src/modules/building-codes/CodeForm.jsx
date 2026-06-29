@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { addCode, updateCode } from '../../firebase/buildingCodes'
 import { PencilSimple, Plus } from '@phosphor-icons/react'
 
@@ -7,7 +7,7 @@ const EMPTY = { city: '', street: '', buildingNumber: '', entrance: '', code: ''
 const inp = 'bg-gray-100 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-orange-500 w-full'
 const lbl = 'block text-xs text-gray-500 mb-1'
 
-export default function CodeForm({ branchId, userId, userName, editCode, allowedCities = [], onSaved, onCancel }) {
+export default function CodeForm({ branchId, userId, userName, editCode, allowedCities = [], isSystemAdmin, onSaved, onCancel }) {
   const [form, setForm] = useState(editCode ? {
     city: editCode.city || '',
     street: editCode.street || '',
@@ -22,6 +22,9 @@ export default function CodeForm({ branchId, userId, userName, editCode, allowed
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  // When isSystemAdmin and no branchId — city is always free text (no allowedCities context)
+  const showCityDropdown = allowedCities.length > 0 && !(!branchId && isSystemAdmin)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.city || !form.street || !form.buildingNumber || !form.code) {
@@ -34,7 +37,7 @@ export default function CodeForm({ branchId, userId, userName, editCode, allowed
       if (editCode) {
         await updateCode(editCode.id, editCode, form, userId, userName)
       } else {
-        await addCode(branchId, form, userId, userName)
+        await addCode(branchId ?? null, form, userId, userName)
       }
       onSaved()
     } catch (err) {
@@ -58,7 +61,7 @@ export default function CodeForm({ branchId, userId, userName, editCode, allowed
           {/* City — dropdown if allowedCities configured, else free text */}
           <div className="col-span-2">
             <label className={lbl}>עיר *</label>
-            {allowedCities.length > 0 ? (
+            {showCityDropdown ? (
               <select value={form.city} onChange={e => set('city', e.target.value)} className={inp}>
                 <option value="">בחר עיר</option>
                 {allowedCities.map(c => <option key={c} value={c}>{c}</option>)}

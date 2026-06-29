@@ -91,9 +91,8 @@ export const addCode = async (branchId, codeData, userId, userName) => {
     throw new Error('כתובת זו כבר קיימת במערכת')
   }
   console.log('[addCode] writing to building_codes, branchId:', branchId, 'data:', codeData)
-  return addDoc(collection(db, 'building_codes'), {
+  const docData = {
     ...codeData,
-    branchId,
     createdBy: userId,
     createdByName: userName,
     createdAt: Timestamp.now(),
@@ -101,7 +100,9 @@ export const addCode = async (branchId, codeData, userId, userName) => {
     updatedBy: userId,
     updatedByName: userName,
     changeLog: [],
-  })
+  }
+  if (branchId != null) docData.branchId = branchId
+  return addDoc(collection(db, 'building_codes'), docData)
 }
 
 // Update with per-field change log
@@ -146,6 +147,20 @@ export const getAllBranchCodes = async (branchId) => {
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.street || '').localeCompare(b.street || '', 'he'))
+}
+
+// Branch codes + global codes (no branchId) filtered by allowedCities
+export const getAllBranchCodesWithCities = async (branchId, allowedCities = []) => {
+  const [branchSnap, globalSnap] = await Promise.all([
+    getDocs(query(collection(db, 'building_codes'), where('branchId', '==', branchId))),
+    getDocs(query(collection(db, 'building_codes'), where('branchId', '==', null))),
+  ])
+  const branchDocs = branchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+  const globalDocs = globalSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(c => allowedCities.length === 0 || allowedCities.includes(c.city))
+  const merged = [...branchDocs, ...globalDocs]
+  return merged.sort((a, b) => (a.street || '').localeCompare(b.street || '', 'he'))
 }
 
 // Batch import — returns per-row results

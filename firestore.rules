@@ -198,17 +198,25 @@ service cloud.firestore {
 
     // Building codes — NO volunteer access
     match /building_codes/{codeId} {
-      // Read (get + list): resource.data is available for existing documents
+      // Read (get + list): also allow global codes (no branchId) to any dispatcher/head
       allow read: if isAuth() && (
         isSystemAdmin()
         || isBranchHead(resource.data.branchId)
         || isRoleHolder(resource.data.branchId, 'dispatcher')
+        || !('branchId' in resource.data)
+        || resource.data.branchId == null
       );
-      // Create: use request.resource.data — resource.data is null for new documents
+      // Create: global codes (no branchId) only for system_admin
       allow create: if isAuth() && (
         isSystemAdmin()
-        || isBranchHead(request.resource.data.branchId)
-        || isRoleHolder(request.resource.data.branchId, 'dispatcher')
+        || (
+          'branchId' in request.resource.data
+          && request.resource.data.branchId != null
+          && (
+            isBranchHead(request.resource.data.branchId)
+            || isRoleHolder(request.resource.data.branchId, 'dispatcher')
+          )
+        )
       );
       // Update / delete: document already exists, resource.data is available
       allow update, delete: if isAuth() && (

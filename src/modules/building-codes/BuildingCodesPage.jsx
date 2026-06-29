@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useRole } from '../../hooks/useRole'
 import { getBranchSettings } from '../../firebase/branches'
-import { getAllBranchCodes } from '../../firebase/buildingCodes'
+import { getAllBranchCodesWithCities } from '../../firebase/buildingCodes'
 import CodeForm from './CodeForm'
 import CodesTable from './CodesTable'
 import LoadingSpinner from '../../shared/LoadingSpinner'
@@ -40,12 +40,12 @@ export default function BuildingCodesPage() {
   const loadAll = async () => {
     if (!branchId) return
     setLoading(true)
-    try { setAllCodes(await getAllBranchCodes(branchId)) }
+    try { setAllCodes(await getAllBranchCodesWithCities(branchId, allowedCities)) }
     catch { setAllCodes([]) }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { loadAll() }, [branchId])
+  useEffect(() => { loadAll() }, [branchId, allowedCities.join(',')])
 
   // ── Filter / sort ─────────────────────────────────────────────────────────
   const [query, setQuery]     = useState('')
@@ -70,8 +70,11 @@ export default function BuildingCodesPage() {
       const vb = sortBy === 'updatedAt'
         ? (b.updatedAt?.toDate?.()?.getTime() ?? 0)
         : String(b[sortBy] ?? '').toLowerCase()
-      if (va < vb) return sortDir === 'asc' ? -1 : 1
-      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      if (cmp !== 0) return sortDir === 'asc' ? cmp : -cmp
+      if (sortBy === 'street') {
+        return parseInt(a.buildingNumber || 0, 10) - parseInt(b.buildingNumber || 0, 10)
+      }
       return 0
     })
 
@@ -111,7 +114,7 @@ export default function BuildingCodesPage() {
         </h1>
         <button
           onClick={openAdd}
-          disabled={!branchId}
+          disabled={!branchId && !isSystemAdmin}
           className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-medium transition"
         >
           + הוסף קוד
@@ -126,6 +129,7 @@ export default function BuildingCodesPage() {
         <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
           <Globe size={40} className="text-gray-300 mb-3 mx-auto" />
           <p className="text-gray-700 font-medium">בחר סניף כדי לצפות בקודי הבניין</p>
+          <p className="text-gray-400 text-sm mt-1">או לחץ "הוסף קוד" לבחירת הסניף בתוך הטופס</p>
         </div>
       ) : branchId && (
         <div className="space-y-4">
@@ -182,6 +186,7 @@ export default function BuildingCodesPage() {
           userName={userName}
           editCode={editCode}
           allowedCities={allowedCities}
+          isSystemAdmin={isSystemAdmin}
           onSaved={handleSaved}
           onCancel={() => { setShowForm(false); setEditCode(null) }}
         />

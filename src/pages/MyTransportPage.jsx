@@ -1,25 +1,13 @@
 import { useState, useEffect } from 'react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, startOfMonth, addMonths, subMonths } from 'date-fns'
 import { he } from 'date-fns/locale'
 import { useAuth } from '../context/AuthContext'
 import { useRole } from '../hooks/useRole'
 import { getVolunteerTransportShifts } from '../firebase/transportShifts'
 import LoadingSpinner from '../shared/LoadingSpinner'
-import { Car, Clock, Calendar as CalendarIcon } from '@phosphor-icons/react'
-
-const inp = 'bg-gray-100 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-orange-500 w-full text-sm'
-const lbl = 'block text-xs text-gray-500 mb-1'
+import { Car, Clock, CaretRight, CaretLeft } from '@phosphor-icons/react'
 
 const TYPE_LABELS = { car: 'רכב', ambulance: 'אמבולנס' }
-
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-const firstOfMonthStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-}
 
 export default function MyTransportPage() {
   const { user } = useAuth()
@@ -27,9 +15,7 @@ export default function MyTransportPage() {
 
   const [shifts, setShifts] = useState([])
   const [loading, setLoading] = useState(true)
-
-  const [fromDate, setFromDate] = useState(firstOfMonthStr())
-  const [toDate, setToDate] = useState(todayStr())
+  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()))
 
   useEffect(() => {
     if (!user?.id) return
@@ -51,7 +37,7 @@ export default function MyTransportPage() {
   }
 
   const filteredShifts = shifts
-    .filter(s => s.date >= fromDate && s.date <= toDate)
+    .filter(s => s.date.startsWith(format(currentMonth, 'yyyy-MM')))
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
 
   const shiftsCount = filteredShifts.filter(s => s.shiftType === 'משמרת').length
@@ -62,7 +48,7 @@ export default function MyTransportPage() {
     <div className="p-4 sm:p-6 max-w-3xl mx-auto pb-20 lg:pb-0" dir="rtl">
       {/* Header */}
       <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2 mb-4">
-        <Car size={24} color="#F97316" weight="fill" /> התחבורה שלי
+        <Car size={24} color="#F97316" weight="fill" /> תחבורה
       </h1>
 
       {/* Explanation card */}
@@ -72,21 +58,17 @@ export default function MyTransportPage() {
         <p>• <span className="font-medium">כונן</span> — כוננות על הרכב ללא אנשי צוות נוספים</p>
       </div>
 
-      {/* Date range filter */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5">
-        <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium mb-3">
-          <CalendarIcon size={16} /> טווח תאריכים
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={lbl}>מתאריך</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inp} />
-          </div>
-          <div>
-            <label className={lbl}>עד תאריך</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inp} />
-          </div>
-        </div>
+      {/* Month navigation */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 flex items-center justify-between">
+        <button onClick={() => setCurrentMonth(m => addMonths(m, 1))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+          <CaretRight size={18} />
+        </button>
+        <span className="text-base font-bold text-gray-800">
+          {format(currentMonth, 'MMMM yyyy', { locale: he })}
+        </span>
+        <button onClick={() => setCurrentMonth(m => subMonths(m, 1))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+          <CaretLeft size={18} />
+        </button>
       </div>
 
       {loading ? (
@@ -114,7 +96,7 @@ export default function MyTransportPage() {
           {/* Records list */}
           {filteredShifts.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
-              <p className="text-gray-500 font-medium">אין רישומים בטווח התאריכים</p>
+              <p className="text-gray-500 font-medium">אין רישומים בחודש זה</p>
             </div>
           ) : (
             <div className="space-y-2.5">
