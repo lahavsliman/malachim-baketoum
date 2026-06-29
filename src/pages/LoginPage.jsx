@@ -111,7 +111,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-gray-600 text-xs mt-6">
-          בעיות בכניסה? פנה לראש הסניף
+          לא מצליח להתחבר? פנה לראש הסניף
         </p>
       </div>
     </div>

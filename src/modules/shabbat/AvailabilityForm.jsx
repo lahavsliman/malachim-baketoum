@@ -106,7 +106,7 @@ export default function AvailabilityForm({
 
   const handleChangeMind = async () => {
     // If confirmed by coordinator → can't change
-    if (myResponse?.status === 'confirmed' && myResponse?.published) {
+    if (myResponse?.published) {
       setError('לא ניתן לשנות לאחר שהשיבוץ פורסם')
       return
     }
@@ -130,7 +130,7 @@ export default function AvailabilityForm({
 
   if (isAlreadySubmitted && myResponse) {
     const label = STATUS_LABELS[myResponse.status] || STATUS_LABELS.available
-    const canChange = myResponse.status !== 'confirmed' || !myResponse.published
+    const canChange = !myResponse.published
 
     return (
       <div className="bg-white border border-gray-200 rounded-2xl p-6">

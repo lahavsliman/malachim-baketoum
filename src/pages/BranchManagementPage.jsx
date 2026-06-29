@@ -1271,6 +1271,27 @@ export default function BranchManagementPage() {
                     <input type="time" value={settings.shabbat.closingTime}
                       onChange={e => setSh('closingTime', e.target.value)} className={inp} />
                   </div>
+                  <div>
+                    <label className={lbl}>עיר לחישוב זמני שבת</label>
+                    <input
+                      type="text"
+                      value={settings.shabbat.cityForZmanim ?? ''}
+                      onChange={e => setSh('cityForZmanim', e.target.value)}
+                      placeholder="לדוגמא: Haifa"
+                      className={inp}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">באנגלית — לפי שמות ערים ב-Hebcal</p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className={lbl}>חתימת הודעת שבת (לוואטסאפ)</label>
+                    <textarea
+                      value={settings.shabbat.whatsappSignature ?? ''}
+                      onChange={e => setSh('whatsappSignature', e.target.value)}
+                      rows={3}
+                      placeholder={`לדוגמא: נתי פרייטט | רכז הלכה סניף חריש\nאגף הלכה | מחוז חוף\nהנהלת סניף חריש`}
+                      className={`${inp} resize-none`}
+                    />
+                  </div>
                 </div>
               </div>
 

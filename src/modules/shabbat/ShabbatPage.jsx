@@ -264,7 +264,7 @@ export default function ShabbatPage() {
   const myStatusLabel = myThisShabbat ? STATUS_HEB[myThisShabbat.status] : null
 
   // ── WhatsApp copy ─────────────────────────────────────────────────────────
-  const handleCopyWhatsApp = () => {
+  const handleCopyWhatsApp = async () => {
     const bName  = branchData?.name ?? ''
     const bCity  = branchData?.city ?? ''
     const parsha = getParshaName(shabbatDate)
@@ -272,8 +272,29 @@ export default function ShabbatPage() {
       ? `${shabbatCoordinator.firstName ?? ''} ${shabbatCoordinator.lastName ?? ''}`.trim()
       : ''
 
+    // Fetch zmanim from Hebcal
+    let candleLighting = ''
+    let havdalah = ''
+    let havdalahRT = ''
+    try {
+      const city = branchData?.settings?.shabbat?.cityForZmanim || branchData?.city || ''
+      if (city) {
+        const url = `https://www.hebcal.com/zmanim?cfg=json&city=${encodeURIComponent(city)}&date=${shabbatDate}&gy=${shabbatDate.slice(0,4)}&gm=${shabbatDate.slice(5,7)}&gd=${shabbatDate.slice(8,10)}&m=18`
+        const res = await fetch(url)
+        const json = await res.json()
+        const fmt = (iso) => iso ? new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' }) : ''
+        candleLighting = fmt(json.times?.candleLighting)
+        havdalah = fmt(json.times?.havdalah)
+        if (json.times?.sunset) {
+          const sunset = new Date(json.times.sunset)
+          sunset.setMinutes(sunset.getMinutes() + 72)
+          havdalahRT = sunset.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' })
+        }
+      }
+    } catch { }
+
     // One block per area — skip areas with no confirmed volunteers
-    const areaBlocks = areas
+    let areaBlocks = areas
       .map(({ name: areaName }) => {
         const confirmed = shifts.filter(s => s.area === areaName && s.status === 'confirmed')
         if (!confirmed.length) return null
@@ -285,7 +306,20 @@ export default function ShabbatPage() {
         return `*${bName} | ${areaName}*\n${lines}`
       })
       .filter(Boolean)
-      .join('\n\n')
+
+    // Add unassigned volunteers block
+    const UNASSIGNED_WA = (a) => !a || a.trim() === '' || a.trim() === 'לא הוגדר'
+    const unassignedConfirmed = shifts.filter(s => s.status === 'confirmed' && UNASSIGNED_WA(s.area))
+    if (unassignedConfirmed.length > 0) {
+      const lines = unassignedConfirmed.map(s => {
+        const vol = allShabbatVols.find(v => v.id === s.volunteerId)
+        const code = vol?.volunteerId ?? ''
+        return `- ${s.volunteerName}${code ? ' ' + code : ''}`
+      }).join('\n')
+      areaBlocks.push(`*${bName} | ללא צוות מוגדר*\n${lines}`)
+    }
+
+    areaBlocks = areaBlocks.join('\n\n')
 
     const text = [
       `⚜️ תורני שבת | סניף ${bName} ⚜️`,
@@ -295,18 +329,41 @@ export default function ShabbatPage() {
       areaBlocks,
       '',
       `🕰 *זמני כניסת ויציאת השבת ב${bCity}*`,
-      `- *כניסת שבת* | `,
-      `- *יציאת שבת* | `,
+      `- *כניסת שבת* | ${candleLighting}`,
+      `- *יציאת שבת* | ${havdalah}`,
+      `- *יציאת שבת ר"ת* | ${havdalahRT}`,
       '',
       `תודה על מסירותכם להציל חיים בשבתות וחגי ישראל ע"פ ההלכה!`,
-      coordName ? `${coordName} | רכז הלכה סניף ${bName}` : `רכז הלכה סניף ${bName}`,
-      `אגף הלכה | מחוז חוף`,
-      `הנהלת סניף ${bName}`,
+      ...(branchData?.settings?.shabbat?.whatsappSignature
+        ? branchData.settings.shabbat.whatsappSignature.split('\n')
+        : [
+            coordName ? `${coordName} | רכז הלכה סניף ${bName}` : `רכז הלכה סניף ${bName}`,
+            `אגף הלכה | מחוז חוף`,
+            `הנהלת סניף ${bName}`,
+          ]
+      ),
     ].filter(l => l !== null).join('\n')
 
-    navigator.clipboard.writeText(text)
-      .then(() => showToast('success', 'הועתק ללוח!'))
-      .catch(() => showToast('error', 'שגיאה בהעתקה'))
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('success', 'ההודעה הועתקה ללוח ✓')
+    } catch {
+      // Fallback for iOS/Android
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      try {
+        document.execCommand('copy')
+        showToast('success', 'ההודעה הועתקה ללוח ✓')
+      } catch {
+        showToast('error', 'שגיאה בהעתקה — נסה שנית')
+      }
+      document.body.removeChild(el)
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -466,6 +523,54 @@ export default function ShabbatPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Published schedule — visible to all volunteers after publish */}
+                  {isPublished && (
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5">
+                      <h3 className="font-black text-gray-900 text-base mb-4 flex items-center gap-2">
+                        <Star size={18} color="#9333EA" weight="fill" /> שיבוץ תורני שבת — {shabbatLabel}
+                      </h3>
+                      <div className="space-y-4">
+                        {areas.map(({ name: area }) => {
+                          const confirmed = shifts.filter(s => s.area === area && s.status === 'confirmed')
+                          if (!confirmed.length) return null
+                          return (
+                            <div key={area}>
+                              <p className="text-sm font-bold text-gray-700 mb-2">{area}</p>
+                              <div className="space-y-1.5">
+                                {confirmed.map(s => {
+                                  const isMe = s.volunteerId === user?.id
+                                  return (
+                                    <div key={s.id} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border
+                                      ${isMe ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
+                                      <span className={`text-sm font-medium ${isMe ? 'text-orange-700' : 'text-gray-800'}`}>
+                                        {s.volunteerName}
+                                        {isMe && <span className="text-xs text-orange-400 mr-1"> (אני)</span>}
+                                      </span>
+                                      {isMe && <span className="text-green-600 text-xs font-semibold">✓</span>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* Unassigned */}
+                        {shifts.filter(s => s.status === 'confirmed' && (!s.area || s.area.trim() === '' || s.area.trim() === 'לא הוגדר')).length > 0 && (
+                          <div>
+                            <p className="text-sm font-bold text-gray-700 mb-2">ללא צוות מוגדר</p>
+                            <div className="space-y-1.5">
+                              {shifts.filter(s => s.status === 'confirmed' && (!s.area || s.area.trim() === '' || s.area.trim() === 'לא הוגדר')).map(s => (
+                                <div key={s.id} className="flex items-center justify-between px-4 py-2.5 rounded-xl border bg-gray-50 border-gray-100">
+                                  <span className="text-sm font-medium text-gray-800">{s.volunteerName}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
