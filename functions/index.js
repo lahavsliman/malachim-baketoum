@@ -171,3 +171,64 @@ exports.sendMessagePushNotification = onDocumentCreated('branch_messages/{messag
   await Promise.all(sends)
   console.log(`[sendMessagePushNotification] Sent push to ${targetUserIds.length} users for message ${event.params.messageId}`)
 })
+
+// ── Shabbat opening reminder ── runs every hour 06:00-22:00 Israel time ──────
+exports.shabbatOpeningReminder = onSchedule(
+  { schedule: '0 6-22 * * *', timeZone: 'Asia/Jerusalem' },
+  async () => {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }))
+    const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const currentDay = DAY_NAMES[now.getDay()]
+    const currentHour = now.getHours()
+
+    const branchesSnap = await db.collection('branches').get()
+
+    for (const branchDoc of branchesSnap.docs) {
+      const branchData = branchDoc.data()
+      const settings = branchData.settings?.shabbat ?? branchData.shabbat ?? {}
+      const openingDay = settings.openingDay || 'thursday'
+      const openingTime = settings.openingTime || '08:00'
+      const [openHour] = openingTime.split(':').map(Number)
+
+      if (currentDay !== openingDay || currentHour !== openHour) continue
+
+      const branchId = branchDoc.id
+      const branchName = branchData.name ?? branchId
+
+      const daysUntilFriday = (5 - now.getDay() + 7) % 7 || 7
+      const nextFriday = new Date(now)
+      nextFriday.setDate(now.getDate() + daysUntilFriday)
+      const fridayLabel = nextFriday.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', timeZone: 'Asia/Jerusalem' })
+
+      const usersSnap = await db.collection('users')
+        .where('branchId', '==', branchId)
+        .where('isActive', '==', true)
+        .get()
+
+      const sends = usersSnap.docs
+        .filter(u => {
+          const d = u.data()
+          return d.permissions?.shabbatVolunteer === true || d.shabbatVolunteer === true
+        })
+        .map(async (userDoc) => {
+          const { fcmToken } = userDoc.data()
+          if (!fcmToken) return
+          try {
+            await getMessaging().send({
+              token: fcmToken,
+              data: {
+                title: 'נפתחה הרשמה לתורנות שבת 🕍',
+                body: `ניתן להירשם לתורנות שבת ${fridayLabel} — סניף ${branchName}`,
+              },
+              webpush: { headers: { Urgency: 'high' } },
+            })
+          } catch (err) {
+            console.error(`[shabbatOpening] FCM failed for ${userDoc.id}:`, err.message)
+          }
+        })
+
+      await Promise.all(sends)
+      console.log(`[shabbatOpeningReminder] Sent to branch ${branchId}`)
+    }
+  }
+)
