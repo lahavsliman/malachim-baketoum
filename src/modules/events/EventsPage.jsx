@@ -565,7 +565,8 @@ export default function EventsPage() {
             targets.map(u => u.id), branchId,
             `אירוע חדש: ${formData.title}`,
             `${fmtShort(formData.date)} ${formData.time} 📍 ${formData.location}`,
-            'general'
+            'general',
+            { eventId: ref.id }
           )
         }
         showToast('success', `האירוע נוצר! ${targets.length} מתנדבים קיבלו הודעה`)
@@ -586,7 +587,8 @@ export default function EventsPage() {
           targets.map(u => u.id), branchId,
           `האירוע ${event.title} בוטל ❌`,
           `האירוע שתוכנן ל-${fmtShort(event.date)} בוטל`,
-          'general'
+          'general',
+          { eventId: event.id }
         )
       }
       showToast('success', 'האירוע סומן כבוטל')
@@ -615,7 +617,8 @@ export default function EventsPage() {
         nonResponders.map(u => u.id), branchId,
         `תזכורת: ${event.title}`,
         `טרם ענית לאירוע ב-${fmtShort(event.date)} — ענה עכשיו`,
-        'general'
+        'general',
+        { eventId: event.id }
       )
       showToast('success', `נשלחה תזכורת ל-${nonResponders.length} מתנדבים`)
     } catch { showToast('error', 'שגיאה בשליחת התזכורת') }

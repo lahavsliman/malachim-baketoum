@@ -29,10 +29,16 @@ export const cancelEvent = async (eventId, userId) => {
 }
 
 export const deleteEvent = async (eventId) => {
-  // Remove linked responses first, then the event document
+  // Delete linked responses
   const q    = query(collection(db, 'event_responses'), where('eventId', '==', eventId))
   const snap = await getDocs(q)
   await Promise.all(snap.docs.map(d => deleteDoc(d.ref)))
+
+  // Delete linked notifications
+  const nq    = query(collection(db, 'notifications'), where('eventId', '==', eventId))
+  const nsnap = await getDocs(nq)
+  await Promise.all(nsnap.docs.map(d => deleteDoc(d.ref)))
+
   await deleteDoc(doc(db, 'events', eventId))
 }
 
