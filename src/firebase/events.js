@@ -96,3 +96,45 @@ export const getVolunteerResponse = async (eventId, volunteerId) => {
   const snap = await getDoc(doc(db, 'event_responses', `${eventId}_${volunteerId}`))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
+
+export const targetGroupCheck = (targetGroup) => {
+  if (typeof targetGroup === 'string' && targetGroup.startsWith('team:')) {
+    const name = targetGroup.slice('team:'.length).trim()
+    return u => (u.team || '').trim() === name
+  }
+  switch (targetGroup) {
+    case 'night':     return u => u.permissions?.nightShifts      || u.nightShifts      === true
+    case 'shabbat':   return u => u.permissions?.shabbatVolunteer || u.shabbatVolunteer === true
+    case 'vehicle':   return u => u.permissions?.vehicleDriver    || u.vehicleDriver    === true
+    case 'ambulance': return u => u.permissions?.ambulanceDriver  || u.ambulanceDriver  === true
+    case 'male':      return u => u.gender === 'male'
+    case 'female':    return u => u.gender === 'female'
+    default:          return () => false
+  }
+}
+
+export const getPendingResponseEvents = async (branchId, userId) => {
+  const today = new Date().toISOString().slice(0, 10)
+  const q = query(collection(db, 'events'), where('branchId', '==', branchId))
+  const snap = await getDocs(q)
+  const candidates = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(e => e.requiresResponse === true && e.status === 'active' && e.date >= today)
+  if (candidates.length === 0) return []
+  const userSnap = await getDoc(doc(db, 'users', userId))
+  const userData = userSnap.exists() ? { id: userId, ...userSnap.data() } : { id: userId }
+  const targeted = candidates.filter(event => {
+    const tg = event.targetGroup
+    if (!tg || tg === 'all') return true
+    if (tg === 'custom') return event.targetUserIds?.includes(userId) ?? false
+    return targetGroupCheck(tg)(userData)
+  })
+  if (targeted.length === 0) return []
+  const pending = []
+  for (const event of targeted) {
+    const rSnap = await getDoc(doc(db, 'event_responses', `${event.id}_${userId}`))
+    if (!rSnap.exists()) pending.push(event)
+  }
+  pending.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''))
+  return pending
+}

@@ -8,7 +8,7 @@ import { UsersThree, Globe, PencilSimple, CalendarBlank, ClockCounterClockwise, 
 import { createBulkNotifications } from '../../firebase/notifications'
 import {
   createEvent, updateEvent, cancelEvent, deleteEvent,
-  subscribeEvents, submitResponse, getEventResponses,
+  subscribeEvents, submitResponse, getEventResponses, targetGroupCheck,
 } from '../../firebase/events'
 import LoadingSpinner from '../../shared/LoadingSpinner'
 import BranchSelector from '../../shared/BranchSelector'
@@ -27,34 +27,6 @@ const TARGET_GROUPS = [
   { value: 'team',      label: 'לפי צוות' },
   { value: 'custom',    label: 'בחירה ידנית' },
 ]
-
-/**
- * Resolve a stored event.targetGroup string to a filter predicate over branchUsers.
- * Encoded forms:
- *   - 'all' / 'custom'                         — caller handles separately
- *   - 'night' | 'shabbat' | 'vehicle' | 'ambulance' — permission flags
- *   - 'male' | 'female'                        — gender field
- *   - 'team:<teamName>'                        — team field equals teamName
- */
-const targetGroupCheck = (targetGroup) => {
-  if (typeof targetGroup === 'string' && targetGroup.startsWith('team:')) {
-    const name = targetGroup.slice('team:'.length).trim()
-    return u => (u.team || '').trim() === name
-  }
-  switch (targetGroup) {
-    // Check both new permissions object and legacy flat fields (same pattern everywhere)
-    case 'night':     return u => u.permissions?.nightShifts      || u.nightShifts      === true
-    case 'shabbat':   return u => u.permissions?.shabbatVolunteer || u.shabbatVolunteer === true
-    case 'vehicle':   return u => u.permissions?.vehicleDriver    || u.vehicleDriver    === true
-    case 'ambulance': return u => u.permissions?.ambulanceDriver  || u.ambulanceDriver  === true
-    case 'male':      return u => u.gender === 'male'
-    case 'female':    return u => u.gender === 'female'
-    // Unknown / future value — secure default: exclude rather than include
-    default:
-      console.warn('[targetGroupCheck] unrecognised targetGroup:', targetGroup)
-      return () => false
-  }
-}
 
 // Human-readable label for any targetGroup (including team:<name>) — used in
 // the event card pill and elsewhere.
@@ -75,7 +47,7 @@ const TARGET_LABEL = Object.fromEntries(TARGET_GROUPS.map(t => [t.value, t.label
 
 const EMPTY_FORM = {
   title: '', date: '', time: '', location: '', description: '',
-  targetGroup: 'all', targetUserIds: [],
+  targetGroup: 'all', targetUserIds: [], requiresResponse: false,
 }
 
 const inp = 'bg-gray-100 border border-gray-200 rounded-xl px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-orange-500 w-full'
@@ -96,6 +68,34 @@ const fmtShort = (date) => {
   catch { return date }
 }
 
+function downloadIcsFile(event) {
+  const [year, month, day] = event.date.split('-').map(Number)
+  const [hour = 0, minute = 0] = (event.time || '00:00').split(':').map(Number)
+  const startDate = new Date(year, month - 1, day, hour, minute)
+  const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000)
+  const pad = n => String(n).padStart(2, '0')
+  const fmt = d => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`
+  const esc = s => (s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Malachim Baketoum//HE',
+    'BEGIN:VEVENT',
+    `UID:event-${event.id || Date.now()}@malachim-baketoum`,
+    `DTSTART:${fmt(startDate)}`,
+    `DTEND:${fmt(endDate)}`,
+    `SUMMARY:${esc(event.title)}`,
+    `LOCATION:${esc(event.location)}`,
+    `DESCRIPTION:${esc(event.description)}`,
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n')
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${event.title || 'event'}.ics`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── EventForm modal ────────────────────────────────────────────────────────
 
 function EventForm({ editEvent, branchUsers, branchTeams = [], onSave, onCancel, saving }) {
@@ -112,6 +112,7 @@ function EventForm({ editEvent, branchUsers, branchTeams = [], onSave, onCancel,
     targetGroup: isTeam ? 'team' : (initialGroup || 'all'),
     targetTeam: isTeam ? initialGroup.slice('team:'.length).trim() : '',
     targetUserIds: editEvent.targetUserIds || [],
+    requiresResponse: editEvent.requiresResponse ?? false,
   } : { ...EMPTY_FORM, targetTeam: '' })
   const [error, setError] = useState('')
 
@@ -225,6 +226,16 @@ function EventForm({ editEvent, branchUsers, branchTeams = [], onSave, onCancel,
               </div>
             </div>
           )}
+
+          <label className="flex items-center gap-2 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={form.requiresResponse ?? false}
+              onChange={e => set('requiresResponse', e.target.checked)}
+              className="w-4 h-4 accent-orange-500 shrink-0"
+            />
+            <span className="text-sm text-gray-700">חובה על מתנדבים לאשר השתתפות בכניסה לאפליקציה</span>
+          </label>
         </div>
 
         {error && (
@@ -296,6 +307,8 @@ function CancelConfirmModal({ event, onMarkCancelled, onDelete, onDismiss, loadi
 function AttendancePanel({ event, responses, branchUsers, onClose, onReminder }) {
   const [tab, setTab] = useState('going')
   const [reminderSending, setReminderSending] = useState(false)
+  const [decisionSending, setDecisionSending] = useState(false)
+  const [decisionSent, setDecisionSent] = useState(false)
 
   const handleReminder = async () => {
     setReminderSending(true)
@@ -315,6 +328,23 @@ function AttendancePanel({ event, responses, branchUsers, onClose, onReminder })
   }
   const respondedIds = new Set(responses.map(r => r.volunteerId))
   const notAnswered = targetUsers.filter(u => !respondedIds.has(u.id))
+
+  const handleDecisionRequest = async () => {
+    setDecisionSending(true)
+    try {
+      const maybeIds = byResponse.maybe.map(r => r.volunteerId)
+      await createBulkNotifications(
+        maybeIds,
+        event.branchId,
+        `נדרשת החלטה: ${event.title}`,
+        `ענית 'אולי' ל-${event.title} (${fmtShort(event.date)}) — נשמח לדעת אם תגיע/י`,
+        'general',
+        { eventId: event.id }
+      )
+      setDecisionSent(true)
+    } catch (e) { console.error(e) }
+    finally { setDecisionSending(false) }
+  }
 
   const exportXlsx = () => {
     // Index branchUsers by id for O(1) lookup of phone/volunteerId
@@ -413,6 +443,23 @@ function AttendancePanel({ event, responses, branchUsers, onClose, onReminder })
               ? 'שולח תזכורת...'
               : `שלח תזכורת לשאינם מגיבים (${notAnswered.length})`}
           </button>
+        )}
+
+        {tab === 'maybe' && byResponse.maybe.length > 0 && (
+          decisionSent ? (
+            <div className="text-center text-sm text-green-600 bg-green-50 border border-green-200 rounded-xl py-2.5 mt-3">
+              נשלחה בקשת החלטה ל-{byResponse.maybe.length} משיבי &quot;אולי&quot;
+            </div>
+          ) : (
+            <button
+              onClick={handleDecisionRequest}
+              disabled={decisionSending}
+              className="w-full mt-3 bg-yellow-500/10 hover:bg-yellow-500/20 disabled:opacity-50 text-yellow-600 border border-yellow-500/20 py-2.5 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2"
+            >
+              <Bell size={15} />
+              {decisionSending ? 'שולח...' : `בקש החלטה ממי שענה אולי (${byResponse.maybe.length})`}
+            </button>
+          )
         )}
       </div>
     </div>
@@ -558,14 +605,15 @@ export default function EventsPage() {
         await updateEvent(editEvent.id, formData)
         showToast('success', 'האירוע עודכן בהצלחה')
       } else {
-        const ref = await createEvent(branchId, formData, user.id)
-        const targets = getTargetUsers({ ...formData, id: ref.id })
+        const targets = getTargetUsers(formData)
+        const resolvedIds = targets.map(u => u.id)
+        const ref = await createEvent(branchId, { ...formData, targetUserIds: resolvedIds }, user.id)
         if (targets.length) {
           await createBulkNotifications(
-            targets.map(u => u.id), branchId,
+            resolvedIds, branchId,
             `אירוע חדש: ${formData.title}`,
             `${fmtShort(formData.date)} ${formData.time} 📍 ${formData.location}`,
-            'general',
+            'event_invite',
             { eventId: ref.id }
           )
         }
@@ -756,6 +804,18 @@ export default function EventsPage() {
                         {r.label}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* Add to calendar */}
+                {canRespond && (
+                  <div className="mb-3">
+                    <button
+                      onClick={() => downloadIcsFile(event)}
+                      className="text-xs text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition border border-gray-200"
+                    >
+                      📅 הוסף ליומן
+                    </button>
                   </div>
                 )}
 

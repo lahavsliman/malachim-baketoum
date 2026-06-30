@@ -172,6 +172,66 @@ exports.sendMessagePushNotification = onDocumentCreated('branch_messages/{messag
   console.log(`[sendMessagePushNotification] Sent push to ${targetUserIds.length} users for message ${event.params.messageId}`)
 })
 
+// ── Event push notification — fires on every new events doc ──────────────────
+exports.sendEventPushNotification = onDocumentCreated('events/{eventId}', async (event) => {
+  const data = event.data?.data()
+  if (!data) return
+
+  const { title, date, time, location, targetUserIds } = data
+  if (!Array.isArray(targetUserIds) || targetUserIds.length === 0) return
+
+  const body = `${date}${time ? ' ' + time : ''} 📍 ${location}`
+
+  const sends = targetUserIds.map(async (userId) => {
+    const userSnap = await db.collection('users').doc(userId).get()
+    if (!userSnap.exists) return
+    const { fcmToken } = userSnap.data()
+    if (!fcmToken) return
+
+    try {
+      await getMessaging().send({
+        token: fcmToken,
+        data: { title: `אירוע חדש: ${title}`, body },
+        webpush: { headers: { Urgency: 'high' } },
+      })
+    } catch (err) {
+      console.error(`[FCM] Event push failed for user ${userId}:`, err.message)
+    }
+  })
+
+  await Promise.all(sends)
+  console.log(`[sendEventPushNotification] Sent push to ${targetUserIds.length} users for event ${event.params.eventId}`)
+})
+
+// ── General notification push — fires on every new notifications doc ──────────
+// Skips branch_messages notifications (already pushed by sendMessagePushNotification)
+// and event_invite notifications (already pushed by sendEventPushNotification).
+exports.sendNotificationPush = onDocumentCreated('notifications/{notificationId}', async (event) => {
+  const data = event.data?.data()
+  if (!data) return
+
+  if (data.messageId || data.type === 'event_invite') return
+
+  const { userId, title, body } = data
+  if (!userId || !title) return
+
+  const userSnap = await db.collection('users').doc(userId).get()
+  if (!userSnap.exists) return
+  const { fcmToken } = userSnap.data()
+  if (!fcmToken) return
+
+  try {
+    await getMessaging().send({
+      token: fcmToken,
+      data: { title, body: body || '' },
+      webpush: { headers: { Urgency: 'high' } },
+    })
+    console.log(`[sendNotificationPush] Sent push to user ${userId}`)
+  } catch (err) {
+    console.error(`[sendNotificationPush] Push failed for user ${userId}:`, err.message)
+  }
+})
+
 // ── Shabbat opening reminder ── runs every hour 06:00-22:00 Israel time ──────
 exports.shabbatOpeningReminder = onSchedule(
   { schedule: '0 6-22 * * *', timeZone: 'Asia/Jerusalem' },

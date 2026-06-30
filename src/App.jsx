@@ -23,6 +23,7 @@ const ContactsPage         = lazy(() => import('./pages/ContactsPage'))
 const ReportsPage          = lazy(() => import('./modules/reports/ReportsPage'))
 import InstallPrompt from './shared/InstallPrompt'
 import CriticalMessageGate from './shared/CriticalMessageGate'
+import EventResponseGate from './shared/EventResponseGate'
 
 // ── Notification permission banner ────────────────────────────────────────────
 function NotificationBanner({ onApprove, onDismiss }) {
@@ -136,6 +137,7 @@ function AppLayout() {
           </Suspense>
         </main>
       </div>
+      <EventResponseGate />
       <CriticalMessageGate />
       <InstallPrompt />
       {showBanner && <NotificationBanner onApprove={handleApprove} onDismiss={handleDismiss} />}
